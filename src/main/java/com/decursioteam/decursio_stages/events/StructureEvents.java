@@ -1,0 +1,72 @@
+package com.decursioteam.decursio_stages.events;
+
+import com.decursioteam.decursio_stages.Registry;
+import com.decursioteam.decursio_stages.datagen.RestrictionsData;
+import net.minecraft.core.registries.Registries;
+import net.minecraft.network.chat.Component;
+import net.minecraft.resources.ResourceLocation;
+import net.minecraft.server.level.ServerPlayer;
+import net.minecraftforge.common.util.FakePlayer;
+import net.minecraftforge.event.TickEvent;
+import net.minecraftforge.event.entity.player.PlayerEvent;
+import net.minecraftforge.event.server.ServerStoppedEvent;
+import net.minecraftforge.eventbus.api.EventPriority;
+import net.minecraftforge.eventbus.api.SubscribeEvent;
+
+import java.util.HashSet;
+import java.util.Locale;
+import java.util.Set;
+import java.util.UUID;
+
+import static com.decursioteam.decursio_stages.utils.ResourceUtil.getApplyToFakePlayer;
+import static com.decursioteam.decursio_stages.utils.StageUtil.hasStage;
+
+public class StructureEvents {
+    private final Set<UUID> playersInRestrictedStructures = new HashSet<>();
+
+    @SubscribeEvent(priority = EventPriority.LOW)
+    public void onPlayerTick(TickEvent.PlayerTickEvent event) {
+        if (event.phase != TickEvent.Phase.END || event.player.level().isClientSide()
+                || !(event.player instanceof ServerPlayer player)) return;
+
+        // Aggregate before changing state: an unrelated structure must not undo a match.
+        boolean inside = isInsideAnyRestrictedStructure(player);
+        boolean wasInside = playersInRestrictedStructures.contains(player.getUUID());
+        if (inside == wasInside) return;
+
+        if (inside) playersInRestrictedStructures.add(player.getUUID());
+        else playersInRestrictedStructures.remove(player.getUUID());
+        // Vanilla action-bar messages expire naturally; only actual transitions reset the timer.
+        player.displayClientMessage(Component.translatable(inside
+                ? "decursio_stages.structure.enter" : "decursio_stages.structure.leave"), true);
+    }
+
+    private boolean isInsideAnyRestrictedStructure(ServerPlayer player) {
+        for (String name : Registry.getRestrictions()) {
+            if (player instanceof FakePlayer && !getApplyToFakePlayer(name)) continue;
+            var restriction = RestrictionsData.getRestrictionData(name).getData();
+            if (restriction.getStructureList().isEmpty()
+                    || !hasStage(player, restriction.getStage().toLowerCase(Locale.ROOT))) continue;
+            for (var entry : restriction.getStructureList()) {
+                if (isInsideStructure(player, entry.getStructure())) return true;
+            }
+        }
+        return false;
+    }
+
+    protected boolean isInsideStructure(ServerPlayer player, ResourceLocation id) {
+        var manager = player.serverLevel().structureManager();
+        var structure = manager.registryAccess().registryOrThrow(Registries.STRUCTURE).get(id);
+        return structure != null && manager.getStructureAt(player.getOnPos(), structure).isValid();
+    }
+
+    @SubscribeEvent
+    public void onLogout(PlayerEvent.PlayerLoggedOutEvent event) {
+        playersInRestrictedStructures.remove(event.getEntity().getUUID());
+    }
+
+    @SubscribeEvent
+    public void onServerStopped(ServerStoppedEvent event) {
+        playersInRestrictedStructures.clear();
+    }
+}
