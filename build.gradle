@@ -1,0 +1,75 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+group = mod_group_id
+version = mod_version
+base { archivesName = mod_id }
+java.toolchain.languageVersion = JavaLanguageVersion.of(25)
+neoForge {
+    version = neo_version
+    runs {
+        client { client() }
+        server { server(); programArgument '--nogui' }
+        data {
+            clientData()
+            gameDirectory = file('run-data')
+            programArguments.addAll '--mod', mod_id, '--all', '--output', file('src/generated/resources').absolutePath, '--existing', file('src/main/resources').absolutePath
+        }
+    }
+    mods {
+        "${mod_id}" { sourceSet sourceSets.main }
+    }
+}
+sourceSets.main.resources.srcDir 'src/generated/resources'
+repositories {
+    maven { url = 'https://maven.blamejared.com' }
+    maven { url = 'https://maven.latvian.dev/releases' }
+    maven { url = 'https://maven.ftb.dev/releases' }
+    maven { url = 'https://maven.shedaniel.me' }
+    maven { url = 'https://maven.architectury.dev' }
+    maven { url = 'https://maven.terraformersmc.com/releases' }
+    maven { url = 'https://cursemaven.com'; content { includeGroup 'curse.maven' } }
+}
+// EMI has no published 26.1.2 API; retain its source for a future compatible release.
+sourceSets.main.java.exclude '**/DecursioStagesEMI.java'
+dependencies {
+    compileOnly 'mezz.jei:jei-26.1.2-neoforge:29.53.0.115'
+    compileOnly 'me.shedaniel:RoughlyEnoughItems-neoforge:26.1.819'
+    compileOnly 'dev.architectury:architectury-neoforge:20.0.8'
+    compileOnly 'dev.ftb.mods:ftb-quests-neoforge:26.1.2.8'
+    compileOnly 'dev.ftb.mods:ftb-library-neoforge:26.1.2.12'
+    compileOnly 'dev.ftb.mods:ftb-teams-neoforge:26.1.2.5'
+    compileOnly('dev.latvian.mods:kubejs-neoforge:26.1.2-8.0.7') { transitive = false }
+    compileOnly('dev.latvian.mods:rhino:2101.2.8-build.91') { transitive = false }
+    switch (project.findProperty('recipeViewer')) {
+        case 'jei': runtimeOnly 'mezz.jei:jei-26.1.2-neoforge:29.53.0.115'; break
+        case 'rei':
+            runtimeOnly 'me.shedaniel:RoughlyEnoughItems-neoforge:26.1.819'
+            runtimeOnly 'dev.architectury:architectury-neoforge:20.0.8'
+            runtimeOnly 'me.shedaniel.cloth:cloth-config-neoforge:26.1.154'
+            break
+        case null: break
+        default: throw new GradleException('recipeViewer must be jei or rei; EMI has no 26.1.2 release')
+    }
+    if (project.hasProperty('withFTBQuests')) {
+        runtimeOnly 'dev.ftb.mods:ftb-quests-neoforge:26.1.2.8'
+        runtimeOnly 'dev.ftb.mods:ftb-library-neoforge:26.1.2.12'
+        runtimeOnly 'dev.ftb.mods:ftb-teams-neoforge:26.1.2.5'
+    }
+    if (project.hasProperty('withKubeJS')) {
+        runtimeOnly('dev.latvian.mods:kubejs-neoforge:26.1.2-8.0.7') { transitive = false }
+        runtimeOnly('dev.latvian.mods:rhino:2101.2.8-build.91') { transitive = false }
+        runtimeOnly 'dev.latvian.mods:better-advanced-tooltips:2601.1.0-build.9'
+    }
+}
+tasks.named('processResources', ProcessResources).configure {
+    var properties = [minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
+                      neo_version: neo_version, loader_version_range: loader_version_range,
+                      mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
+                      mod_authors: mod_authors, mod_description: mod_description]
+    inputs.properties properties
+    filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) { expand properties }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }

@@ -1,0 +1,38 @@
+{
+  "Restriction Data": {
+    "stage": "age_1",
+    "itemList": [],
+    "tagList": [],
+    "modList": [
+      "minecraft"
+    ],
+    "exceptionList": [
+      {
+        "item": "minecraft:diamond_sword",
+        "nbt": {
+          "minecraft:damage": 0,
+          "minecraft:enchantments": {
+            "minecraft:fire_aspect": 2
+          }
+        }
+      },
+      {
+        "item": "minecraft:oak_planks"
+      }
+    ]
+  },
+  "Settings": {
+    "advancedTooltips": "ALWAYS",
+    "itemsTitle": "Locked Item",
+    "itemsPickupDelay": 60,
+    "hideInJEI_REI": true,
+    "canPickupItems": false,
+    "dropItemsFromInventory": false,
+    "dropArmorFromInventory": true,
+    "canUseItems": false,
+    "canRightClickBlocks": false,
+    "canBreakBlocks": false,
+    "containerListWhitelist": false,
+    "applyToFakePlayers": false
+  }
+}

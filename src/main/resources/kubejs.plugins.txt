@@ -1,0 +1,1 @@
+com.decursioteam.decursio_stages.compat.kubejs.DecursioStagesKubeJSPlugin
