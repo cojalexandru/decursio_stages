@@ -1,0 +1,79 @@
+plugins {
+    id 'java-library'
+    id 'idea'
+    id 'net.neoforged.moddev' version '2.0.148'
+}
+group = mod_group_id
+version = mod_version
+base { archivesName = mod_id }
+java.toolchain.languageVersion = JavaLanguageVersion.of(21)
+neoForge {
+    version = neo_version
+    parchment {
+        minecraftVersion = '1.21.1'
+        mappingsVersion = '2024.11.17'
+    }
+    runs {
+        client { client() }
+        server { server(); programArgument '--nogui' }
+        data {
+            data()
+            gameDirectory = file('run-data')
+            programArguments.addAll '--mod', mod_id, '--all', '--output', file('src/generated/resources').absolutePath, '--existing', file('src/main/resources').absolutePath
+        }
+    }
+    mods {
+        "${mod_id}" { sourceSet sourceSets.main }
+    }
+}
+sourceSets.main.resources.srcDir 'src/generated/resources'
+repositories {
+    maven { url = 'https://maven.blamejared.com' }
+    maven { url = 'https://maven.latvian.dev/releases' }
+    maven { url = 'https://maven.ftb.dev/releases' }
+    maven { url = 'https://maven.shedaniel.me' }
+    maven { url = 'https://maven.architectury.dev' }
+    maven { url = 'https://maven.terraformersmc.com/releases' }
+    maven { url = 'https://cursemaven.com'; content { includeGroup 'curse.maven' } }
+}
+dependencies {
+    compileOnly 'mezz.jei:jei-1.21.1-neoforge:19.70.0.469'
+    compileOnly 'me.shedaniel:RoughlyEnoughItems-neoforge:16.0.799'
+    compileOnly 'dev.architectury:architectury-neoforge:13.0.8'
+    compileOnly 'dev.emi:emi-neoforge:1.1.24+1.21.1'
+    compileOnly 'dev.ftb.mods:ftb-quests-neoforge:2101.1.13'
+    compileOnly 'dev.ftb.mods:ftb-library-neoforge:2101.1.25'
+    compileOnly 'dev.ftb.mods:ftb-teams-neoforge:2101.1.2'
+    compileOnly('dev.latvian.mods:kubejs-neoforge:2101.7.2-build.363') { transitive = false }
+    compileOnly('dev.latvian.mods:rhino:2101.2.7-build.81') { transitive = false }
+    switch (project.findProperty('recipeViewer')) {
+        case 'jei': runtimeOnly 'mezz.jei:jei-1.21.1-neoforge:19.70.0.469'; break
+        case 'rei':
+            runtimeOnly 'me.shedaniel:RoughlyEnoughItems-neoforge:16.0.799'
+            runtimeOnly 'dev.architectury:architectury-neoforge:13.0.8'
+            runtimeOnly 'me.shedaniel.cloth:cloth-config-neoforge:15.0.140'
+            break
+        case 'emi': runtimeOnly 'dev.emi:emi-neoforge:1.1.24+1.21.1'; break
+        case null: break
+        default: throw new GradleException('recipeViewer must be jei, rei or emi')
+    }
+    if (project.hasProperty('withFTBQuests')) {
+        runtimeOnly 'dev.ftb.mods:ftb-quests-neoforge:2101.1.13'
+        runtimeOnly 'dev.ftb.mods:ftb-library-neoforge:2101.1.25'
+        runtimeOnly 'dev.ftb.mods:ftb-teams-neoforge:2101.1.2'
+        runtimeOnly 'dev.architectury:architectury-neoforge:13.0.8'
+    }
+    if (project.hasProperty('withKubeJS')) {
+        runtimeOnly('dev.latvian.mods:kubejs-neoforge:2101.7.2-build.363') { transitive = false }
+        runtimeOnly('dev.latvian.mods:rhino:2101.2.7-build.81') { transitive = false }
+    }
+}
+tasks.named('processResources', ProcessResources).configure {
+    var properties = [minecraft_version: minecraft_version, minecraft_version_range: minecraft_version_range,
+                      neo_version: neo_version, loader_version_range: loader_version_range,
+                      mod_id: mod_id, mod_name: mod_name, mod_license: mod_license, mod_version: mod_version,
+                      mod_authors: mod_authors, mod_description: mod_description]
+    inputs.properties properties
+    filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) { expand properties }
+}
+tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
