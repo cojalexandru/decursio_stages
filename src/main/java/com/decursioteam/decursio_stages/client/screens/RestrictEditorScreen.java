@@ -1,20 +1,16 @@
 package com.decursioteam.decursio_stages.client.screens;
 
-import com.decursioteam.decursio_stages.utils.ItemDataUtil;
-import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
-import net.minecraft.client.renderer.Rect2i;
-import net.minecraft.world.level.material.Fluid;
-import net.minecraft.world.level.material.Fluids;
-
 import com.decursioteam.decursio_stages.DecursioStages;
 import com.decursioteam.decursio_stages.network.RestrictionEditorServer;
 import com.decursioteam.decursio_stages.network.messages.EditRestrictionMessage;
 import com.decursioteam.decursio_stages.network.messages.OpenRestrictEditorMessage;
+import com.decursioteam.decursio_stages.utils.ItemDataUtil;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
 import com.mojang.serialization.Dynamic;
 import com.mojang.serialization.JsonOps;
+
 import net.minecraft.ChatFormatting;
 import net.minecraft.client.Minecraft;
 import net.minecraft.client.gui.GuiGraphicsExtractor;
@@ -24,6 +20,9 @@ import net.minecraft.client.gui.components.EditBox;
 import net.minecraft.client.gui.components.Tooltip;
 import net.minecraft.client.gui.narration.NarrationElementOutput;
 import net.minecraft.client.gui.screens.Screen;
+import net.minecraft.client.gui.screens.inventory.AbstractContainerScreen;
+import net.minecraft.client.renderer.Rect2i;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.nbt.NbtOps;
 import net.minecraft.nbt.Tag;
@@ -34,13 +33,16 @@ import net.minecraft.tags.TagKey;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.item.Items;
+import net.minecraft.world.level.material.Fluid;
+import net.minecraft.world.level.material.Fluids;
 import net.neoforged.fml.ModList;
-import net.minecraft.core.registries.BuiltInRegistries;
-
-import org.lwjgl.glfw.GLFW;
 
 import org.jspecify.annotations.Nullable;
+import org.lwjgl.glfw.GLFW;
+
 import java.util.*;
+
+import static com.decursioteam.decursio_stages.client.screens.RestrictionEditorTheme.*;
 
 /**
  * In-game editor for restriction files.
@@ -57,9 +59,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     private static final int GRID_COLS = 9, GRID_ROWS = 3, CELL = 18;
     private static final int MAX_PACKET = 32000;
 
-    private static final int C_PANEL = 0xF0121218, C_BORDER = 0xFF3C3C52, C_SECTION = 0xFF1B1B24,
-            C_SLOT = 0xFF2B2B38, C_SLOT_HOVER = 0xFF45455C, C_TEXT = 0xFFE6E6EE, C_MUTED = 0xFF9090A0,
-            C_ACCENT = 0xFF7F6BFF, C_OK = 0xFF5CD67A, C_WARN = 0xFFE8C14A, C_ERR = 0xFFE85A5A;
+
 
     private record Setting(String key, boolean def) {}
     private static final List<Setting> SETTINGS = List.of(
@@ -88,6 +88,10 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     private String tooltipMode = "ALWAYS";
     private boolean showExceptions;
     private boolean dirty;
+    private List<String> structureIds = List.of();
+
+    List<String> structureIds() { return structureIds; }
+
     private boolean loading;
     private boolean awaitingServer;
     private boolean initialized;
@@ -105,6 +109,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     public RestrictEditorScreen(OpenRestrictEditorMessage message) {
         super(new RestrictionEditorMenu(), Minecraft.getInstance().player.getInventory(), Component.translatable("decursio_stages.gui.editor.title"), W, H);
         this.restrictions = message.getRestrictions();
+        this.structureIds = message.getStructureIds();
         this.pendingSelect = message.getSelect();
         if (message.getStatus() != null) setStatus(message.getStatus(), message.isError() ? C_ERR : C_OK);
         for (int i = 0; i < SETTINGS.size(); i++) settingValues[i] = SETTINGS.get(i).def();
@@ -181,6 +186,16 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
                 .bounds(rx, top + 30 + SETTINGS.size() * 18 + 4, 116, 16)
                 .tooltip(Tooltip.create(Component.translatable("decursio_stages.gui.editor.setting.advancedTooltips.tooltip"))).build());
 
+        addRenderableWidget(Button.builder(Component.literal("Advanced..."), b -> {
+            if (awaitingServer) return;
+            minecraft.setScreen(new AdvancedRestrictionScreen(this, obj(working, "Restriction Data"), updates -> {
+                JsonObject data = obj(working, "Restriction Data");
+                working.add("Restriction Data", data);
+                updates.entrySet().forEach(entry -> data.add(entry.getKey(), entry.getValue().deepCopy()));
+                markDirty();
+            }));
+        }).bounds(rx, top + 214, 116, 12).build());
+
         deleteButton = addRenderableWidget(Button.builder(Component.empty(), b -> requestDelete())
                 .bounds(rx, top + 228, 56, 16).build());
         saveButton = addRenderableWidget(Button.builder(Component.translatable("decursio_stages.gui.editor.save"), b -> save())
@@ -212,6 +227,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
 
     /** Called when the server answers (after a save/delete, or a new /decstages gui while open). */
     public void applyServerUpdate(OpenRestrictEditorMessage message) {
+        structureIds = message.getStructureIds();
         awaitingServer = false;
         restrictions = message.getRestrictions();
         refilter();
@@ -997,7 +1013,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     // =====================================================================================
 
     /** Compact checkbox-style toggle. */
-    private static class SettingToggle extends AbstractButton {
+    static class SettingToggle extends AbstractButton {
         boolean value;
         private final java.util.function.Consumer<Boolean> onChange;
 

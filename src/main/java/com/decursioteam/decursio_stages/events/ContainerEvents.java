@@ -15,16 +15,35 @@ import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
 
-import java.util.HashSet;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.List;
+import java.util.UUID;
 import java.util.Locale;
-import java.util.Set;
 
 import static com.decursioteam.decursio_stages.utils.ResourceUtil.*;
 import static com.decursioteam.decursio_stages.utils.StageUtil.hasStage;
 import static com.decursioteam.decursio_stages.utils.Utils.dropItemStack;
 
 public class ContainerEvents {
-    private Set<ItemStack> prevInventory;
+    private final Map<UUID, InventorySnapshot> inventories = new HashMap<>();
+
+    @SubscribeEvent
+    public void logout(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+        inventories.remove(event.getEntity().getUUID());
+    }
+
+    @SubscribeEvent
+    public void stopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) { inventories.clear(); }
+
+    private record InventorySnapshot(List<ItemStack> items, List<ItemStack> crafting, List<String> active, long revision) {
+        static List<ItemStack> copy(List<ItemStack> stacks) { return stacks.stream().map(ItemStack::copy).toList(); }
+        static boolean matches(List<ItemStack> before, List<ItemStack> now) {
+            if (before.size() != now.size()) return false;
+            for (int i = 0; i < before.size(); i++) if (!ItemStack.matches(before.get(i), now.get(i))) return false;
+            return true;
+        }
+    }
 
     @SubscribeEvent
     public void playerContainerOpenEvent(PlayerContainerEvent.Open event) {
@@ -63,43 +82,43 @@ public class ContainerEvents {
         if (event.getEntity().level().isClientSide()) return;
         Player player = event.getEntity();
 
-        // Check if player's inventory changed
-        if (!new HashSet<>(player.getInventory().getNonEquipmentItems()).equals(prevInventory) || !player.inventoryMenu.getCraftSlots().isEmpty()) {
-            Registry.getRestrictions().forEach(restriction -> {
-                if(!getApplyToFakePlayer(restriction) && player instanceof FakePlayer) return;
+        var registry = RestrictionsData.getRegistry();
+        // Check stage policy each tick, including dynamic KubeJS Check handlers.
+        List<String> active = registry.getRestrictions().entrySet().stream()
+                .filter(entry -> (!(player instanceof FakePlayer) || entry.getValue().getSettingsCodec().getApplyToFakePlayers())
+                        && !hasStage(player, entry.getValue().getData().getStage().toLowerCase(Locale.ROOT)))
+                .map(Map.Entry::getKey).toList();
+        var items = player.getInventory().getNonEquipmentItems();
+        var crafting = player.inventoryMenu.getCraftSlots();
+        List<ItemStack> craftingItems = new java.util.ArrayList<>();
+        for (int i = 0; i < crafting.getContainerSize(); i++) craftingItems.add(crafting.getItem(i));
+        var previous = inventories.get(player.getUUID());
+        if (previous != null && previous.revision == registry.revision() && previous.active.equals(active)
+                && InventorySnapshot.matches(previous.items, items) && InventorySnapshot.matches(previous.crafting, craftingItems)) return;
 
-                String stage = RestrictionsData.getRestrictionData(restriction).getData().getStage().toLowerCase(Locale.ROOT);
-
-                // *Drop items from inventory crafting grid
-                if (!hasStage(player, stage) && RestrictionsData.getRestrictionData(restriction).getSettingsCodec().getContainerListWhitelist() && !getContainers(restriction).contains("decursio_stages.inventoryMenu.CraftingGrid")) {
-                    for (int i = 0; i <= player.inventoryMenu.getCraftSlots().getContainerSize(); i++) {
-                        if (check(restriction, player.inventoryMenu.getCraftSlots().getItem(i), ResourceUtil.CHECK_TYPES.ALL)) {
-                            dropItemStack(player, player.inventoryMenu.getCraftSlots().getItem(i));
-                            player.inventoryMenu.slotsChanged(player.getInventory());
-                        }
+        for (String restriction : active) {
+            var settings = RestrictionsData.getRestrictionData(restriction).getSettingsCodec();
+            boolean listed = getContainers(restriction).contains("decursio_stages.inventoryMenu.CraftingGrid");
+            if (settings.getContainerListWhitelist() != listed) {
+                boolean changed = false;
+                for (int i = 0; i < crafting.getContainerSize(); i++) {
+                    if (check(restriction, crafting.getItem(i), ResourceUtil.CHECK_TYPES.ALL)) {
+                        dropItemStack(player, crafting.getItem(i));
+                        changed = true;
                     }
                 }
-                // *Drop items from inventory crafting grid
-                if (!hasStage(player, stage) && !RestrictionsData.getRestrictionData(restriction).getSettingsCodec().getContainerListWhitelist() && getContainers(restriction).contains("decursio_stages.inventoryMenu.CraftingGrid")) {
-                    for (int i = 0; i <= player.inventoryMenu.getCraftSlots().getContainerSize(); i++) {
-                        if (check(restriction, player.inventoryMenu.getCraftSlots().getItem(i), ResourceUtil.CHECK_TYPES.ALL)) {
-                            dropItemStack(player, player.inventoryMenu.getCraftSlots().getItem(i));
-                            player.inventoryMenu.slotsChanged(player.getInventory());
-                        }
-                    }
+                if (changed) player.inventoryMenu.slotsChanged(player.getInventory());
+            }
+            if (settings.getCheckPlayerInventory()) {
+                for (ItemStack item : items) {
+                    if (check(restriction, item, ResourceUtil.CHECK_TYPES.ALL)) dropItemStack(player, item);
                 }
-
-                // *Drop items from player'restriction inventory
-                if (RestrictionsData.getRestrictionData(restriction).getSettingsCodec().getCheckPlayerInventory() && !hasStage(player, stage)) {
-                    for (ItemStack item : player.getInventory().getNonEquipmentItems()) {
-                        if (check(restriction, item, ResourceUtil.CHECK_TYPES.ALL)) {
-                            dropItemStack(player, item);
-                        }
-                    }
-                }
-            });
-            prevInventory = new HashSet<>(player.getInventory().getNonEquipmentItems());
+            }
         }
+        craftingItems.clear();
+        for (int i = 0; i < crafting.getContainerSize(); i++) craftingItems.add(crafting.getItem(i));
+        inventories.put(player.getUUID(), new InventorySnapshot(InventorySnapshot.copy(items),
+                InventorySnapshot.copy(craftingItems), active, registry.revision()));
     }
 
     @SubscribeEvent

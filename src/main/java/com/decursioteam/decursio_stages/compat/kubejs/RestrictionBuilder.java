@@ -55,6 +55,23 @@ public final class RestrictionBuilder {
     public RestrictionBuilder exceptFluidTag(String id) { return entry("exceptionList", "fluidTag", id(id)); }
     public RestrictionBuilder exceptFluidMod(String mod) { return entry("exceptionList", "fluidMod", modId(mod)); }
 
+    /** Hide a block as another block until this restriction's stage is unlocked. */
+    public RestrictionBuilder ore(String block, String replacement) {
+        return blockReplacement("block", block, replacement);
+    }
+
+    public RestrictionBuilder oreTag(String tag, String replacement) {
+        return blockReplacement("tag", tag, replacement);
+    }
+
+    private RestrictionBuilder blockReplacement(String selector, String source, String replacement) {
+        JsonObject rule = new JsonObject();
+        rule.addProperty(selector, id(source));
+        rule.addProperty("replacement", id(replacement));
+        array("blockReplacementList").add(rule);
+        return this;
+    }
+
     public RestrictionBuilder dimension(String dimension) {
         return dimension(dimension, "You don't have access to this dimension");
     }

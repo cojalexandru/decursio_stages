@@ -1,6 +1,7 @@
 package com.decursioteam.decursio_stages.datagen;
 
 import com.decursioteam.decursio_stages.DecursioStages;
+import com.decursioteam.decursio_stages.utils.CompiledRestriction;
 import com.decursioteam.decursio_stages.datagen.utils.IRestrictionsData;
 import com.google.gson.JsonObject;
 import com.mojang.serialization.JsonOps;
@@ -10,6 +11,12 @@ import java.util.*;
 public class RestrictionsData implements IRestrictionsData {
 
     private static final RestrictionsData INSTANCE = new RestrictionsData();
+    private Map<String, CompiledRestriction> compiled = Map.of();
+    public CompiledRestriction compiled(String name) {
+        return compiled.getOrDefault(name, CompiledRestriction.EMPTY);
+    }
+    private long revision;
+    public long revision() { return revision; }
     private final Map<String, JsonObject> RAW_DATA = new LinkedHashMap<>();
     private final Map<String, Restrictions> CUSTOM_DATA = new LinkedHashMap<>();
 
@@ -35,9 +42,13 @@ public class RestrictionsData implements IRestrictionsData {
     }
 
     public void regenerateCustomRestrictionData() {
+        revision++;
         RAW_DATA.forEach((s, jsonObject) -> CUSTOM_DATA.compute(s, (s1, restrictionCodec) ->
                 Restrictions.codec(s).parse(JsonOps.INSTANCE, jsonObject)
                         .getOrThrow( error -> new IllegalArgumentException("Could not create restriction " + s + ": " + error))));
+        Map<String, CompiledRestriction> next = new HashMap<>();
+        CUSTOM_DATA.forEach((name, rule) -> next.put(name, new CompiledRestriction(rule.getData())));
+        compiled = Map.copyOf(next);
     }
 
     public JsonObject getRawORestrictionsData(String name) {
@@ -46,6 +57,8 @@ public class RestrictionsData implements IRestrictionsData {
 
     public void clearCustomRestrictionData() {
         CUSTOM_DATA.clear();
+        compiled = Map.of();
+        revision++;
     }
 
     @Override

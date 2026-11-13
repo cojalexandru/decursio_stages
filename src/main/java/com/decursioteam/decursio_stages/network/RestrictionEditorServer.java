@@ -42,7 +42,9 @@ public final class RestrictionEditorServer {
         RestrictionsData.getRegistry().getRawRestrictions().entrySet().stream()
                 .sorted(Map.Entry.comparingByKey())
                 .forEach(e -> snapshot.put(e.getKey(), e.getValue().deepCopy()));
-        DecursioStages.NETWORK.sendToPlayer(player, new OpenRestrictEditorMessage(snapshot, select, status, error));
+        DecursioStages.NETWORK.sendToPlayer(player, new OpenRestrictEditorMessage(snapshot, select, status, error,
+                player.level().registryAccess().lookupOrThrow(net.minecraft.core.registries.Registries.STRUCTURE)
+                        .keySet().stream().map(Object::toString).sorted().toList()));
     }
 
     public static void handle(EditRestrictionMessage message, IPayloadContext context) {
@@ -96,6 +98,17 @@ public final class RestrictionEditorServer {
         }
         // The file name is the identity of the restriction; a stale "name" field would make it load under another id.
         data.remove("name");
+
+        try {
+            if (data.has("blockReplacementList")) {
+                var rules = com.decursioteam.decursio_stages.restrictions.BlockReplacement.CODEC.listOf()
+                        .parse(JsonOps.INSTANCE, data.get("blockReplacementList")).getOrThrow();
+                rules.forEach(com.decursioteam.decursio_stages.orestaging.OreStages::validate);
+            }
+        } catch (RuntimeException error) {
+            open(player, fallbackSelect, Component.translatable("decursio_stages.gui.editor.status.invalid_data", error.getMessage()), true);
+            return;
+        }
 
         Optional<String> parseError = Restrictions.codec(name).parse(JsonOps.INSTANCE, json).error().map(err -> err.message());
         if (parseError.isPresent()) {

@@ -43,6 +43,7 @@ public class DecursioStages {
         NeoForge.EVENT_BUS.register(new MobEvents());
         NeoForge.EVENT_BUS.register(new StructureEvents());
         NeoForge.EVENT_BUS.register(new DimensionEvents());
+        NeoForge.EVENT_BUS.register(new com.decursioteam.decursio_stages.orestaging.OreStages());
     }
 
     private void registerReloadListener(AddServerReloadListenersEvent event) {

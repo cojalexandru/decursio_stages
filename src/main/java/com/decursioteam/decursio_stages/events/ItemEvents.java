@@ -7,7 +7,6 @@ import com.decursioteam.decursio_stages.utils.ResourceUtil;
 import com.decursioteam.decursio_stages.utils.StageUtil;
 import com.decursioteam.decursio_stages.utils.Utils;
 import net.minecraft.ChatFormatting;
-import net.minecraft.client.Minecraft;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.entity.player.Player;
@@ -62,7 +61,8 @@ public class ItemEvents {
     @SubscribeEvent
 
     public void onItemTooltip(ItemTooltipEvent event) {
-        Player player = Minecraft.getInstance().player;
+        Player player = event.getEntity();
+        if (player == null) return;
         final IStagesData stageData = StageUtil.getPlayerData(player);
         if (stageData == null) return;
         final ArrayList<String> playerStages = stageData.getStages();

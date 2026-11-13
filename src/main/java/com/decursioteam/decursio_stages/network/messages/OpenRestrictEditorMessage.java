@@ -9,6 +9,8 @@ import net.minecraft.network.chat.Component;
 import org.jspecify.annotations.Nullable;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.List;
+import com.google.gson.JsonArray;
 
 /**
  * Server -> client. Opens the restriction editor (or refreshes it if it is already open)
@@ -22,8 +24,10 @@ public class OpenRestrictEditorMessage implements CustomPacketPayload {
     @Nullable private final String select;
     @Nullable private final Component status;
     private final boolean error;
+    private final List<String> structureIds;
 
-    public OpenRestrictEditorMessage(Map<String, JsonObject> restrictions, @Nullable String select, @Nullable Component status, boolean error) {
+    public OpenRestrictEditorMessage(Map<String, JsonObject> restrictions, @Nullable String select, @Nullable Component status, boolean error, List<String> structureIds) {
+        this.structureIds = List.copyOf(structureIds);
         this.restrictions = restrictions;
         this.select = select;
         this.status = status;
@@ -37,7 +41,10 @@ public class OpenRestrictEditorMessage implements CustomPacketPayload {
         String select = buf.readBoolean() ? buf.readUtf() : null;
         Component status = buf.readBoolean() ? net.minecraft.network.chat.ComponentSerialization.STREAM_CODEC.decode(buf) : null;
         boolean error = buf.readBoolean();
-        return new OpenRestrictEditorMessage(map, select, status, error);
+        JsonArray ids = JsonParser.parseString(JsonPayload.read(buf)).getAsJsonArray();
+        List<String> structures = new java.util.ArrayList<>();
+        ids.forEach(id -> structures.add(id.getAsString()));
+        return new OpenRestrictEditorMessage(map, select, status, error, structures);
     }
 
     public void encode(net.minecraft.network.RegistryFriendlyByteBuf buf) {
@@ -49,10 +56,14 @@ public class OpenRestrictEditorMessage implements CustomPacketPayload {
         buf.writeBoolean(status != null);
         if (status != null) net.minecraft.network.chat.ComponentSerialization.STREAM_CODEC.encode(buf, status);
         buf.writeBoolean(error);
+        JsonArray ids = new JsonArray();
+        structureIds.forEach(ids::add);
+        JsonPayload.write(buf, ids.toString());
     }
 
     public Map<String, JsonObject> getRestrictions() { return restrictions; }
     @Nullable public String getSelect() { return select; }
     @Nullable public Component getStatus() { return status; }
+    public List<String> getStructureIds() { return structureIds; }
     public boolean isError() { return error; }
 }

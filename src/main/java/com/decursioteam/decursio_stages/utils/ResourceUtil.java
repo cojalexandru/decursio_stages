@@ -14,10 +14,8 @@ import net.minecraft.world.level.material.Fluid;
 import net.minecraft.core.registries.BuiltInRegistries;
 
 import java.util.HashSet;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicBoolean;
 
 public class ResourceUtil {
 
@@ -41,7 +39,7 @@ public class ResourceUtil {
         if (id == null) return false;
         if (isFluidExcepted(restriction, fluid, id)) return false;
         if (getMods(restriction).contains(id.getNamespace())) return true;
-        for (FluidRestriction entry : getFluids(restriction)) {
+        for (FluidRestriction entry : RestrictionsData.getRegistry().compiled(restriction).fluids) {
             if (entry.getFluid() != null) {
                 if (fluid.isSame(entry.getFluid())) return true;
             } else if (entry.getTag() != null) {
@@ -53,16 +51,17 @@ public class ResourceUtil {
         return false;
     }
 
+    /** Read-only collection views, rebuilt together with the restriction registry. */
     public static Set<ItemRestriction> getItems(String restriction) {
-        return new HashSet<>(RestrictionsData.getRestrictionData(restriction).getData().getItemList());
+        return RestrictionsData.getRegistry().compiled(restriction).items;
     }
 
     public static Set<Identifier> getTags(String restriction) {
-        return new HashSet<>(RestrictionsData.getRestrictionData(restriction).getData().getTagList());
+        return RestrictionsData.getRegistry().compiled(restriction).tags;
     }
 
     public static Set<String> getMods(String restriction) {
-        return new HashSet<>(RestrictionsData.getRestrictionData(restriction).getData().getModList());
+        return RestrictionsData.getRegistry().compiled(restriction).mods;
     }
 
     public static HashSet<FluidRestriction> getFluids(String restriction) {
@@ -70,15 +69,15 @@ public class ResourceUtil {
     }
 
     public static Set<ItemExclusion> getExceptions(String restriction) {
-        return new HashSet<>(RestrictionsData.getRestrictionData(restriction).getData().getExceptionList());
+        return RestrictionsData.getRegistry().compiled(restriction).exceptions;
     }
 
     public static Set<DimensionRestriction> getDimensions(String restriction) {
-        return new HashSet<>(RestrictionsData.getRestrictionData(restriction).getData().getDimensionList());
+        return RestrictionsData.getRegistry().compiled(restriction).dimensions;
     }
 
     public static Set<String> getContainers(String restriction) {
-        return new HashSet<>(RestrictionsData.getRestrictionData(restriction).getData().getContainerList());
+        return RestrictionsData.getRegistry().compiled(restriction).containers;
     }
 
     public static boolean getApplyToFakePlayer(String restriction) {
@@ -90,79 +89,12 @@ public class ResourceUtil {
     }
 
     public static boolean check(String restriction, ItemStack itemStack, CHECK_TYPES checkType) {
-        if (getRegistryName(itemStack.getItem()).equals(Identifier.parse("minecraft:air"))) {
-            return false;
-        }
-
-        if (!isItemExcluded(restriction, itemStack)) {
-            return false;
-        }
-
-        switch (checkType) {
-            case ITEM: {
-                for (ItemRestriction item : getItems(restriction)) {
-                    if (NBTComparisonUtil.doesItemMatchRestriction(item, itemStack)) {
-                        return true;
-                    }
-                }
-                return false;
-            }
-            case MOD: {
-                if (!getMods(restriction).isEmpty()) {
-                    String itemMod = Objects.requireNonNull(getRegistryName(itemStack.getItem())).getNamespace();
-                    return getMods(restriction).contains(itemMod);
-                }
-                return false;
-            }
-            case TAG: {
-                if (!getTags(restriction).isEmpty()) {
-                    for (Identifier tagID : getTags(restriction)) {
-                        if (itemStack.is(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, tagID))) {
-                            return true;
-                        }
-                    }
-                }
-                return false;
-            }
-            case ALL: {
-                return check(restriction, itemStack, CHECK_TYPES.ITEM) ||
-                        check(restriction, itemStack, CHECK_TYPES.MOD) ||
-                        check(restriction, itemStack, CHECK_TYPES.TAG);
-            }
-            default:
-                return false;
-        }
+        return RestrictionsData.getRegistry().compiled(restriction).matches(itemStack, checkType);
     }
 
+    /** Historical API: true means the stack is NOT excepted. */
     public static boolean isItemExcluded(String restriction, ItemStack itemStack) {
-        AtomicBoolean isExcluded = new AtomicBoolean(false);
-
-        getExceptions(restriction).forEach(itemExclusion -> {
-            if (itemExclusion.getResourceLocation() != null) {
-                if (itemExclusion.getCompoundNBT() == null) {
-                    if (itemStack.is(itemExclusion.getItem())) {
-                        isExcluded.set(true);
-                    }
-                } else {
-                    if (itemStack.is(itemExclusion.getItem()) &&
-                            NBTComparisonUtil.areNBTCompoundsEqual(itemExclusion.getCompoundNBT(), ItemDataUtil.get(itemStack))) {
-                        isExcluded.set(true);
-                    }
-                }
-            }
-            else if (itemExclusion.getMod() != null) {
-                if (getRegistryName(itemStack.getItem()).getNamespace().equals(itemExclusion.getMod())) {
-                    isExcluded.set(true);
-                }
-            }
-            else if (itemExclusion.getTag() != null) {
-                if (itemStack.is(net.minecraft.tags.TagKey.create(net.minecraft.core.registries.Registries.ITEM, itemExclusion.getTag()))) {
-                    isExcluded.set(true);
-                }
-            }
-        });
-
-        return !isExcluded.get();
+        return !RestrictionsData.getRegistry().compiled(restriction).excepted(itemStack);
     }
 
     public static JsonObject itemStackToJson(ItemStack stack) {

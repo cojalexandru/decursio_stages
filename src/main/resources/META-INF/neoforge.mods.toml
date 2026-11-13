@@ -20,3 +20,5 @@ type = "required"
 versionRange = "${minecraft_version_range}"
 ordering = "NONE"
 side = "BOTH"
+[[mixins]]
+config="decursio_stages.mixins.json"

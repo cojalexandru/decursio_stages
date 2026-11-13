@@ -19,7 +19,7 @@ public class SettingsCodec {
             Codec.BOOL.fieldOf("canUseItems").orElse(false).forGetter(SettingsCodec::getUsableItems),
             Codec.BOOL.fieldOf("canRightClickBlocks").orElse(false).forGetter(SettingsCodec::getUsableBlocks),
             Codec.BOOL.fieldOf("canBreakBlocks").orElse(false).forGetter(SettingsCodec::getDestroyableBlocks),
-            Codec.BOOL.fieldOf("containerListWhitelist").orElse(false).forGetter(SettingsCodec::getHideInJEI),
+            Codec.BOOL.fieldOf("containerListWhitelist").orElse(false).forGetter(SettingsCodec::getContainerListWhitelist),
             Codec.BOOL.fieldOf("applyToFakePlayers").orElse(false).forGetter(SettingsCodec::getApplyToFakePlayers)
     ).apply(instance, SettingsCodec::new));
 

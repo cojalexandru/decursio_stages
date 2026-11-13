@@ -4,9 +4,12 @@
   "package": "com.decursioteam.decursio_stages.mixin",
   "compatibilityLevel": "JAVA_25",
   "mixins": [
+    "ChunkPacketDataAccessor",
+    "SectionUpdateAccessor",
+    "OrePacketMixin",
+    "OreMiningMixin"
   ],
-  "client": [
-  ],
+  "client": [],
   "injectors": {
     "defaultRequire": 1
   }
