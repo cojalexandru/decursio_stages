@@ -121,8 +121,10 @@ public final class OrePackets {
         FriendlyByteBuf input = packet.getChunkData().getReadBuffer();
         FriendlyByteBuf output = null;
         try {
-            var biomes = player.level().registryAccess().registryOrThrow(Registries.BIOME);
-            while (input.isReadable()) {
+            var level = player.serverLevel();
+            var biomes = level.registryAccess().registryOrThrow(Registries.BIOME);
+            int sections = level.getSectionsCount();
+            for (int i = 0; i < sections && input.isReadable(); i++) {
                 int start = input.readerIndex();
                 var section = new LevelChunkSection(biomes);
                 section.read(input);
