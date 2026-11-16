@@ -10,22 +10,21 @@ import java.util.Optional;
 public class StructureRestriction {
 
     private final ResourceLocation structure;
-    private Boolean canUseBlock;
-    private Boolean canBreakBlock;
-
-    private Boolean canPlaceBlock;
-    private Optional<List<ResourceLocation>> useBlockList;
-    private Optional<List<ResourceLocation>> canPlaceBlockList;
-    private Optional<List<ResourceLocation>> breakBlockList;
+    private final Boolean canUseBlock;
+    private final Boolean canBreakBlock;
+    private final Boolean canPlaceBlock;
+    private final Optional<List<ResourceLocation>> useBlockList;
+    private final Optional<List<ResourceLocation>> canPlaceBlockList;
+    private final Optional<List<ResourceLocation>> breakBlockList;
 
     public StructureRestriction(ResourceLocation structure, Boolean canUseBlock, Boolean canPlaceBlock, Boolean canBreakBlock, Optional<List<ResourceLocation>> useBlockList, Optional<List<ResourceLocation>> canPlaceBlockList, Optional<List<ResourceLocation>> breakBlockList) {
         this.structure = structure;
         this.canUseBlock = canUseBlock;
         this.canPlaceBlock = canPlaceBlock;
         this.canBreakBlock = canBreakBlock;
-        this.useBlockList = useBlockList;
-        this.canPlaceBlockList = canPlaceBlockList;
-        this.breakBlockList = breakBlockList;
+        this.useBlockList = Optional.of(List.copyOf(useBlockList.orElse(List.of())));
+        this.canPlaceBlockList = Optional.of(List.copyOf(canPlaceBlockList.orElse(List.of())));
+        this.breakBlockList = Optional.of(List.copyOf(breakBlockList.orElse(List.of())));
     }
 
     public static Codec<StructureRestriction> codec() {
@@ -40,31 +39,11 @@ public class StructureRestriction {
         ).apply(instance, StructureRestriction::new));
     }
 
-    public Boolean getCanBreakBlock() {
-        return canBreakBlock;
-    }
-
-    public Boolean getCanUseBlock() {
-        return canUseBlock;
-    }
-
-    public Optional<List<ResourceLocation>> getBreakBlockList() {
-        return breakBlockList;
-    }
-
-    public Optional<List<ResourceLocation>> getCanPlaceBlockList() {
-        return canPlaceBlockList;
-    }
-
-    public Boolean getCanPlaceBlock() {
-        return canPlaceBlock;
-    }
-
-    public Optional<List<ResourceLocation>> getUseBlockList() {
-        return useBlockList;
-    }
-
-    public ResourceLocation getStructure() {
-        return structure;
-    }
+    public Boolean getCanBreakBlock() { return canBreakBlock; }
+    public Boolean getCanUseBlock() { return canUseBlock; }
+    public Optional<List<ResourceLocation>> getBreakBlockList() { return breakBlockList; }
+    public Optional<List<ResourceLocation>> getCanPlaceBlockList() { return canPlaceBlockList; }
+    public Boolean getCanPlaceBlock() { return canPlaceBlock; }
+    public Optional<List<ResourceLocation>> getUseBlockList() { return useBlockList; }
+    public ResourceLocation getStructure() { return structure; }
 }

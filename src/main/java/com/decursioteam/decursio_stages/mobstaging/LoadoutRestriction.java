@@ -1,12 +1,13 @@
 package com.decursioteam.decursio_stages.mobstaging;
 
+import com.decursioteam.decursio_stages.utils.ItemDataUtil;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 import java.util.Optional;
@@ -16,7 +17,6 @@ public class LoadoutRestriction {
     private final ResourceLocation item;
     private String slot;
     private CompoundTag compoundTag;
-
     private final Integer chance;
 
     public LoadoutRestriction(ResourceLocation item, String slot, Optional<CompoundTag> compoundTag, Integer chance) {
@@ -35,30 +35,18 @@ public class LoadoutRestriction {
         ).apply(instance, LoadoutRestriction::new));
     }
 
-    public Integer getChance() {
-        return Math.min(100, chance);
-    }
-
-    @Nullable
-    public CompoundTag getCompoundNBT() {
-        return compoundTag;
-    }
-
-    public String getSlot() {
-        return slot;
-    }
-
-    public ResourceLocation getResourceLocation() {
-        return item;
-    }
+    public Integer getChance() { return Math.min(100, chance); }
+    @Nullable public CompoundTag getCompoundNBT() { return compoundTag; }
+    public String getSlot() { return slot; }
+    public ResourceLocation getResourceLocation() { return item; }
 
     public Item getItem() {
-        return ForgeRegistries.ITEMS.getValue(item);
+        return BuiltInRegistries.ITEM.get(item);
     }
 
     public ItemStack getItemStack() {
         ItemStack itemStack = new ItemStack(getItem());
-        if (getCompoundNBT() != null) itemStack.setTag(getCompoundNBT());
+        if (getCompoundNBT() != null) ItemDataUtil.apply(itemStack, getCompoundNBT());
         return itemStack;
     }
 }

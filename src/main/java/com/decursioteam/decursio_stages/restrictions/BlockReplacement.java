@@ -1,0 +1,22 @@
+package com.decursioteam.decursio_stages.restrictions;
+
+import com.mojang.serialization.Codec;
+import com.mojang.serialization.DataResult;
+import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.resources.ResourceLocation;
+import java.util.Optional;
+
+/** Uses its containing restriction's stage; exactly one source selector is required. */
+public record BlockReplacement(Optional<ResourceLocation> block, Optional<ResourceLocation> tag, ResourceLocation replacement) {
+    private static DataResult<BlockReplacement> validate(BlockReplacement rule) {
+        return rule.block.isPresent() == rule.tag.isPresent()
+                ? DataResult.error(() -> "Block replacement requires exactly one block or tag")
+                : DataResult.success(rule);
+    }
+
+    public static final Codec<BlockReplacement> CODEC = RecordCodecBuilder.<BlockReplacement>create(instance -> instance.group(
+            ResourceLocation.CODEC.optionalFieldOf("block").forGetter(BlockReplacement::block),
+            ResourceLocation.CODEC.optionalFieldOf("tag").forGetter(BlockReplacement::tag),
+            ResourceLocation.CODEC.fieldOf("replacement").forGetter(BlockReplacement::replacement)
+    ).apply(instance, BlockReplacement::new)).flatXmap(BlockReplacement::validate, BlockReplacement::validate);
+}

@@ -32,7 +32,8 @@ public final class JsonPayload {
 
     public static String decompress(byte[] data) {
         try (GZIPInputStream gzip = new GZIPInputStream(new ByteArrayInputStream(data))) {
-            byte[] out = gzip.readNBytes(MAX_BYTES);
+            byte[] out = gzip.readNBytes(MAX_BYTES + 1);
+            if (out.length > MAX_BYTES) throw new IOException("Restriction JSON exceeds " + MAX_BYTES + " decompressed bytes");
             return new String(out, StandardCharsets.UTF_8);
         } catch (IOException e) {
             throw new UncheckedIOException(e);

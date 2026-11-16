@@ -1,13 +1,14 @@
 package com.decursioteam.decursio_stages.restrictions;
 
 import com.decursioteam.decursio_stages.DecursioStages;
+import com.decursioteam.decursio_stages.utils.ItemDataUtil;
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
+import net.minecraft.core.registries.BuiltInRegistries;
 import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.ResourceLocation;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
-import net.minecraftforge.registries.ForgeRegistries;
 
 import javax.annotation.Nullable;
 import java.util.Optional;
@@ -36,12 +37,9 @@ public class ItemExclusion {
             tag.ifPresent(x -> this.tag = tag.get());
             mod.ifPresent(x -> this.mod = mod.get());
             compoundTag.ifPresent(x -> this.compoundTag = compoundTag.get());
-        }
-        catch (NullPointerException e)
-        {
+        } catch (NullPointerException e) {
             DecursioStages.LOGGER.error("Error creating FluidRestriction: {}", e.getMessage());
         }
-
     }
 
     public static Codec<ItemExclusion> codec() {
@@ -56,49 +54,23 @@ public class ItemExclusion {
         ).apply(instance, ItemExclusion::new));
     }
 
-    @Nullable
-    public CompoundTag getCompoundNBT() {
-        return compoundTag;
-    }
-
-    /** Fluid exception: keeps this fluid usable/visible even if its mod or a fluid tag is restricted. */
-    @Nullable
-    public ResourceLocation getFluid() {
-        return fluid;
-    }
-
-    @Nullable
-    public ResourceLocation getFluidTag() {
-        return fluidTag;
-    }
-
-    @Nullable
-    public String getFluidMod() { return fluidMod; }
-
-    @Nullable
-    public String getMod() {
-        return mod;
-    }
-
-    @Nullable
-    public ResourceLocation getTag() {
-        return tag;
-    }
-
-    @Nullable
-    public ResourceLocation getResourceLocation() {
-        return item;
-    }
+    @Nullable public CompoundTag getCompoundNBT() { return compoundTag; }
+    @Nullable public ResourceLocation getFluid() { return fluid; }
+    @Nullable public ResourceLocation getFluidTag() { return fluidTag; }
+    @Nullable public String getFluidMod() { return fluidMod; }
+    @Nullable public String getMod() { return mod; }
+    @Nullable public ResourceLocation getTag() { return tag; }
+    @Nullable public ResourceLocation getResourceLocation() { return item; }
 
     @Nullable
     public Item getItem() {
-        return item == null ? null : ForgeRegistries.ITEMS.getValue(item);
+        return item == null ? null : BuiltInRegistries.ITEM.get(item);
     }
 
     @Nullable
     public ItemStack getItemStack() {
         ItemStack itemStack = new ItemStack(getItem());
-        if(getCompoundNBT() != null) itemStack.setTag(getCompoundNBT());
+        if (getCompoundNBT() != null) ItemDataUtil.applyPreview(itemStack, getCompoundNBT());
         return itemStack;
     }
 }

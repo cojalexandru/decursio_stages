@@ -6,11 +6,12 @@ import com.decursioteam.decursio_stages.commands.arguments.RestrictionArgumentTy
 import com.decursioteam.decursio_stages.commands.arguments.StageArgumentType;
 import com.decursioteam.decursio_stages.commands.arguments.TooltipArgumentType;
 import com.decursioteam.decursio_stages.datagen.RestrictionsData;
-import com.decursioteam.decursio_stages.datagen.utils.FileUtils;
 import com.decursioteam.decursio_stages.network.RestrictionEditorServer;
+import com.decursioteam.decursio_stages.persistence.RestrictionSaveService;
 import com.decursioteam.decursio_stages.utils.ResourceUtil;
 import com.decursioteam.decursio_stages.utils.StageUtil;
 import com.decursioteam.decursio_stages.utils.StagesHandler;
+import com.google.gson.JsonObject;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -34,33 +35,22 @@ import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraftforge.common.MinecraftForge;
 import net.minecraftforge.event.RegisterCommandsEvent;
-import net.minecraftforge.fml.common.Mod;
 import net.minecraftforge.fml.javafmlmod.FMLJavaModLoadingContext;
 import net.minecraftforge.fml.loading.FMLPaths;
 import net.minecraftforge.registries.DeferredRegister;
 import net.minecraftforge.registries.RegistryObject;
 
-import java.io.IOException;
-import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
 
-import static com.decursioteam.decursio_stages.datagen.utils.FileUtils.restrictionExists;
-
-@Mod.EventBusSubscriber(bus = Mod.EventBusSubscriber.Bus.MOD)
 public class DecStagesCommands {
 
     private static final DeferredRegister<ArgumentTypeInfo<?, ?>> COMMAND_ARGUMENT_TYPES = DeferredRegister.create(Registries.COMMAND_ARGUMENT_TYPE, DecursioStages.MOD_ID);
     private static final RegistryObject<SingletonArgumentInfo<StageArgumentType>> STAGE_ARGUMENT = COMMAND_ARGUMENT_TYPES.register("stage_argument", () -> ArgumentTypeInfos.registerByClass(StageArgumentType.class, SingletonArgumentInfo.contextFree(StageArgumentType::new)));
     private static final RegistryObject<SingletonArgumentInfo<RestrictionArgumentType>> RESTRICTION_ARGUMENT = COMMAND_ARGUMENT_TYPES.register("restriction_argument", () -> ArgumentTypeInfos.registerByClass(RestrictionArgumentType.class, SingletonArgumentInfo.contextFree(RestrictionArgumentType::new)));
-
     private static final RegistryObject<SingletonArgumentInfo<TooltipArgumentType>> TOOLTIP_ARGUMENT = COMMAND_ARGUMENT_TYPES.register("tooltip_argument", () -> ArgumentTypeInfos.registerByClass(TooltipArgumentType.class, SingletonArgumentInfo.contextFree(TooltipArgumentType::new)));
 
     public static void init() {
@@ -90,17 +80,19 @@ public class DecStagesCommands {
                             RestrictionEditorServer.open(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "restriction"), null, false);
                             return Command.SINGLE_SUCCESS;
                         })));
+        DiagnosticCommands.register(command, event.getBuildContext());
         event.getDispatcher().register(command);
     }
 
-    private static LiteralArgumentBuilder<CommandSourceStack> createInfoCommand (String key, int permissions, Command<CommandSourceStack> command) {
+    private static LiteralArgumentBuilder<CommandSourceStack> createInfoCommand(String key, int permissions, Command<CommandSourceStack> command) {
         return Commands.literal(key).requires(sender -> sender.hasPermission(permissions)).executes(command);
     }
-    private static LiteralArgumentBuilder<CommandSourceStack> createLinksCommand (String key, int permissions, Command<CommandSourceStack> command) {
+
+    private static LiteralArgumentBuilder<CommandSourceStack> createLinksCommand(String key, int permissions, Command<CommandSourceStack> command) {
         return Commands.literal(key).requires(sender -> sender.hasPermission(permissions)).then(Commands.argument("stage", new StageArgumentType()).executes(command));
     }
 
-    private static LiteralArgumentBuilder<CommandSourceStack> createPlayerCommand (String key, int permissions, Command<CommandSourceStack> command, Command<CommandSourceStack> commandNoPlayer) {
+    private static LiteralArgumentBuilder<CommandSourceStack> createPlayerCommand(String key, int permissions, Command<CommandSourceStack> command, Command<CommandSourceStack> commandNoPlayer) {
         return Commands.literal(key).requires(sender -> sender.hasPermission(permissions)).executes(commandNoPlayer).then(Commands.argument("targets", EntityArgument.player()).executes(command));
     }
 
@@ -127,8 +119,7 @@ public class DecStagesCommands {
                                                                                                                 .executes(command)))))))))))));
     }
 
-
-    private static LiteralArgumentBuilder<CommandSourceStack> createSilentStageCommand (String key, int permissions, Command<CommandSourceStack> command, Command<CommandSourceStack> silent) {
+    private static LiteralArgumentBuilder<CommandSourceStack> createSilentStageCommand(String key, int permissions, Command<CommandSourceStack> command, Command<CommandSourceStack> silent) {
         return Commands.literal(key).requires(sender -> sender.hasPermission(permissions))
                 .then(Commands.argument("targets", EntityArgument.players())
                         .then(Commands.argument("stage", new StageArgumentType())
@@ -136,43 +127,43 @@ public class DecStagesCommands {
                                         .executes(silent))));
     }
 
-    private static int reloadStages (CommandContext<CommandSourceStack> ctx) {
-        RestrictionsData.getRegistry().clearRawRestrictionsData();
-        Registry.setupRestrictions();
+    private static int reloadStages(CommandContext<CommandSourceStack> ctx) {
+        if (!Registry.setupRestrictions()) {
+            ctx.getSource().sendFailure(Component.literal("Restriction reload failed; last working rules remain active. Use /decstages diagnose reload for source and error details."));
+            return 0;
+        }
         Registry.registerRestrictionsList();
-
-        ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.reloadstages", StagesHandler.getStages()), true);
+        ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.reloadstages", StagesHandler.getStages().toString()), true);
         return 0;
     }
 
-    private static int linksCommand (CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
+    private static int linksCommand(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
         final String stage = StageArgumentType.getStage(ctx, "stage");
         HashSet<String> restrictions = new HashSet<>();
         RestrictionsData.getRegistry().getRawRestrictions().forEach((name, rawJSON) -> {
-            if(rawJSON.getAsJsonObject("Restriction Data").get("stage").getAsString().equals(stage))
+            if (rawJSON.getAsJsonObject("Restriction Data").get("stage").getAsString().equals(stage))
                 restrictions.add("\"" + name + ".json\"");
         });
         if (!restrictions.isEmpty()) {
             ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.links.success", stage, String.join(", ", restrictions.toArray(new String[0]))), true);
-        }
-        else
+        } else {
             ctx.getSource().sendFailure(Component.translatable("decursio_stages.commands.links.failure", stage));
+        }
         return 0;
     }
 
-    private static int listStages (CommandContext<CommandSourceStack> ctx) {
+    private static int listStages(CommandContext<CommandSourceStack> ctx) {
         ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.liststages", StagesHandler.getStages()), true);
         return 0;
     }
 
-
     private static int addStage(CommandContext<CommandSourceStack> ctx, boolean silent) throws CommandSyntaxException {
         final String stage = StageArgumentType.getStage(ctx, "stage");
         for (final ServerPlayer player : EntityArgument.getPlayers(ctx, "targets")) {
-            if(stage.contains(",")){
+            if (stage.contains(",")) {
                 Set<String> stages = Arrays.stream(stage.split(",")).collect(Collectors.toSet());
                 for (String s : stages) {
-                    if(!StageUtil.hasStage(player, s)) StageUtil.addStage(player, s);
+                    if (!StageUtil.hasStage(player, s)) StageUtil.addStage(player, s);
                 }
                 if (!silent || !BoolArgumentType.getBool(ctx, "silent")) {
                     ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.addstages.success.target", stages), true);
@@ -180,9 +171,8 @@ public class DecStagesCommands {
                         ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.addstages.success.sender", player.getDisplayName(), stages), true);
                     }
                 }
-            }
-            else {
-                if(!StageUtil.hasStage(player, stage)) StageUtil.addStage(player, stage);
+            } else {
+                if (!StageUtil.hasStage(player, stage)) StageUtil.addStage(player, stage);
                 else if (!silent || !BoolArgumentType.getBool(ctx, "silent")) {
                     ctx.getSource().sendFailure(Component.translatable("decursio_stages.commands.addstage.failure.target", stage));
                     if (player != ctx.getSource().getEntity()) {
@@ -204,10 +194,10 @@ public class DecStagesCommands {
     private static int removeStage(CommandContext<CommandSourceStack> ctx, boolean silent) throws CommandSyntaxException {
         final String stage = StageArgumentType.getStage(ctx, "stage");
         for (final ServerPlayer player : EntityArgument.getPlayers(ctx, "targets")) {
-            if(stage.contains(",")){
+            if (stage.contains(",")) {
                 Set<String> stages = Arrays.stream(stage.split(",")).collect(Collectors.toSet());
                 for (String s : stages) {
-                    if(StageUtil.hasStage(player, s)) StageUtil.removeStage(player, s);
+                    if (StageUtil.hasStage(player, s)) StageUtil.removeStage(player, s);
                 }
                 if (!silent || !BoolArgumentType.getBool(ctx, "silent")) {
                     ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.removestages.success.target", stages), true);
@@ -215,9 +205,8 @@ public class DecStagesCommands {
                         ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.removestages.success.sender", player.getDisplayName(), stages), true);
                     }
                 }
-            }
-            else {
-                if(StageUtil.hasStage(player, stage)) StageUtil.removeStage(player, stage);
+            } else {
+                if (StageUtil.hasStage(player, stage)) StageUtil.removeStage(player, stage);
                 else if (!silent || !BoolArgumentType.getBool(ctx, "silent")) {
                     ctx.getSource().sendFailure(Component.translatable("decursio_stages.commands.removestage.failure.target", stage));
                     if (player != ctx.getSource().getEntity()) {
@@ -241,14 +230,13 @@ public class DecStagesCommands {
             for (final ServerPlayer player : EntityArgument.getPlayers(ctx, "targets")) {
                 getPlayerStages(ctx, player);
             }
-        }
-        else {
+        } else {
             getPlayerStages(ctx, ctx.getSource().getPlayerOrException());
         }
         return 0;
     }
 
-    private static void getPlayerStages (CommandContext<CommandSourceStack> ctx, ServerPlayer player) {
+    private static void getPlayerStages(CommandContext<CommandSourceStack> ctx, ServerPlayer player) {
         final String stageInfo = Objects.requireNonNull(StageUtil.getPlayerData(player)).getStages().stream().map(Object::toString).collect(Collectors.joining(", "));
         if (stageInfo.isEmpty()) ctx.getSource().sendFailure(Component.translatable("decursio_stages.commands.check.failure.empty", player.getDisplayName()));
         else ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.check.success.list", player.getDisplayName(), stageInfo), false);
@@ -261,28 +249,14 @@ public class DecStagesCommands {
         return 0;
     }
 
-    private static Path createCustomPath(String pathName) {
-        Path customPath = Paths.get(FMLPaths.CONFIGDIR.get().toAbsolutePath().toString(), DecursioStages.MOD_ID, pathName);
-        createDirectory(customPath, pathName);
-        return customPath;
-    }
-    private static void createDirectory(Path path, String dirName) {
-        try {
-            Files.createDirectories(path);
-        } catch (FileAlreadyExistsException ignored) {
-        } catch (IOException e) {
-            DecursioStages.LOGGER.error("failed to create \"{}\" directory", dirName);
-        }
-    }
-
     private static void giveStages(CommandContext<CommandSourceStack> ctx, ServerPlayer player) {
-        for(final String knownStage : StageUtil.getStages()) StageUtil.addStage(player, knownStage);
+        for (final String knownStage : StageUtil.getStages()) StageUtil.addStage(player, knownStage);
         ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.all.target"), true);
-        if(player != ctx.getSource().getEntity()) ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.all.sender", player.getDisplayName()), true);
+        if (player != ctx.getSource().getEntity()) ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.all.sender", player.getDisplayName()), true);
     }
 
     private static int clearStages(CommandContext<CommandSourceStack> ctx, boolean hasPlayer) throws CommandSyntaxException {
-        if(hasPlayer) for (final ServerPlayer player : EntityArgument.getPlayers(ctx, "targets")) clearStages(ctx, player);
+        if (hasPlayer) for (final ServerPlayer player : EntityArgument.getPlayers(ctx, "targets")) clearStages(ctx, player);
         else clearStages(ctx, ctx.getSource().getPlayerOrException());
         return 0;
     }
@@ -290,7 +264,7 @@ public class DecStagesCommands {
     private static void clearStages(CommandContext<CommandSourceStack> ctx, ServerPlayer player) {
         final int removedStages = StageUtil.clearStages(player);
         ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.clear.target", removedStages), true);
-        if(player != ctx.getSource().getEntity()) ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.clear.sender", removedStages, player.getDisplayName()), true);
+        if (player != ctx.getSource().getEntity()) ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.clear.sender", removedStages, player.getDisplayName()), true);
     }
 
     private static int restrictItem(CommandContext<CommandSourceStack> ctx) throws CommandSyntaxException {
@@ -317,28 +291,26 @@ public class DecStagesCommands {
 
         String itemName = ResourceUtil.getRegistryName(heldItem.getItem()).toString();
 
-
-        AtomicInteger counter = new AtomicInteger();
-        RestrictionsData.getRegistry().getRawRestrictions().forEach((restriction, x) -> {
-            if (restrictionExists(restriction, stage, advancedTooltips, itemTitle, pickupDelay,
-                    hideInJEI, canPickup, containerListWhitelist, checkPlayerInventory,
-                    checkPlayerEquipment, usableItems, usableBlocks, destroyableBlocks)) { // Also check by expected ID
-
-                FileUtils.restrictItem(stage, advancedTooltips, itemTitle, pickupDelay, hideInJEI,
-                        canPickup, containerListWhitelist, checkPlayerInventory, checkPlayerEquipment,
-                        usableItems, usableBlocks, destroyableBlocks, heldItem);
-                counter.getAndIncrement();
-            }
-        });
-
-        if (counter.get() == 0) {
-            FileUtils.addRestriction(stage, advancedTooltips, itemTitle, pickupDelay, hideInJEI,
-                    canPickup, containerListWhitelist, checkPlayerInventory, checkPlayerEquipment,
-                    usableItems, usableBlocks, destroyableBlocks);
-
-            FileUtils.restrictItem(stage, advancedTooltips, itemTitle, pickupDelay, hideInJEI,
-                    canPickup, containerListWhitelist, checkPlayerInventory, checkPlayerEquipment,
-                    usableItems, usableBlocks, destroyableBlocks, heldItem);
+        JsonObject settings = new JsonObject();
+        settings.addProperty("advancedTooltips", advancedTooltips);
+        settings.addProperty("itemsTitle", itemTitle);
+        settings.addProperty("itemsPickupDelay", pickupDelay);
+        settings.addProperty("hideInJEI_REI", hideInJEI);
+        settings.addProperty("canPickupItems", canPickup);
+        settings.addProperty("containerListWhitelist", containerListWhitelist);
+        settings.addProperty("dropItemsFromInventory", checkPlayerInventory);
+        settings.addProperty("dropArmorFromInventory", checkPlayerEquipment);
+        settings.addProperty("canUseItems", usableItems);
+        settings.addProperty("canRightClickBlocks", usableBlocks);
+        settings.addProperty("canBreakBlocks", destroyableBlocks);
+        try {
+            RestrictionSaveService.restrict(
+                    FMLPaths.CONFIGDIR.get().resolve(DecursioStages.MOD_ID).resolve("restrictions"),
+                    stage, settings, heldItem);
+        } catch (Exception error) {
+            DecursioStages.LOGGER.error("/decstages restrict failed", error);
+            ctx.getSource().sendFailure(Component.literal("Restriction was not saved: " + error.getMessage()));
+            return 0;
         }
 
         Component itemComponent = Component.literal(itemName).withStyle(ChatFormatting.AQUA);
@@ -348,10 +320,6 @@ public class DecStagesCommands {
                 "decursio_stages.commands.restrictitem.success",
                 itemComponent, stageComponent), true);
 
-        Registry.setupRestrictions();
-        Registry.registerRestrictionsList();
-
         return 1;
     }
-
 }

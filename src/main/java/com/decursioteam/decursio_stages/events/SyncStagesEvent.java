@@ -11,19 +11,17 @@ public class SyncStagesEvent extends PlayerEvent {
 
     private final IStagesData data;
 
+    @OnlyIn(Dist.CLIENT)
     public SyncStagesEvent(IStagesData data) {
-
         this(data, Minecraft.getInstance().player);
     }
 
     public SyncStagesEvent(IStagesData data, Player player) {
-
         super(player);
         this.data = data;
     }
 
-    public IStagesData getData () {
-
+    public IStagesData getData() {
         return this.data;
     }
 }

@@ -1,5 +1,6 @@
 package com.decursioteam.decursio_stages.compat.kubejs;
 
+import com.decursioteam.decursio_stages.datagen.RestrictionSchema;
 import com.decursioteam.decursio_stages.datagen.Restrictions;
 import com.google.gson.JsonObject;
 import com.mojang.serialization.JsonOps;
@@ -36,6 +37,7 @@ public final class RestrictionsEventJS extends EventJS {
                 throw new IllegalArgumentException(name + ": missing Restriction Data object");
             JsonObject data = json.getAsJsonObject("Restriction Data");
             if (!data.has("stage")) throw new IllegalArgumentException(name + ": missing stage");
+            RestrictionSchema.validate(json);
             data.addProperty("stage", StageBindings.normalizeStage(data.get("stage").getAsString()));
             data.remove("name");
             Restrictions.codec(name).parse(JsonOps.INSTANCE, json)

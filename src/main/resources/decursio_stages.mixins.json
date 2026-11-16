@@ -2,11 +2,36 @@
   "required": true,
   "minVersion": "0.8",
   "package": "com.decursioteam.decursio_stages.mixin",
-  "compatibilityLevel": "JAVA_8",
+  "compatibilityLevel": "JAVA_17",
   "refmap": "decursio_stages.refmap.json",
   "mixins": [
+    "ChunkPacketDataAccessor",
+    "SectionUpdateAccessor",
+    "OrePacketMixin",
+    "OreMiningMixin",
+    "OreBlockCacheMixin",
+    "OreLightCacheMixin",
+    "OreJadeMixin",
+    "OreProbeMixin",
+    "RecipeCraftingMixin",
+    "RecipeClickMixin",
+    "RecipeQuickMoveMixin",
+    "RecipeRemainderMixin",
+    "SmithingRecipeMixin",
+    "StonecuttingRecipeMixin",
+    "WorkstationQuickMoveMixin",
+    "FurnaceRecipeMixin",
+    "CampfireRecipeMixin",
+    "CampfireProgress",
+    "ProcessorInputMixin",
+    "FurnaceOutputMixin",
+    "FurnaceQuickMoveMixin",
+    "ProcessorDropsMixin",
+    "ProcessorQuickInputMixin",
+    "ProcessorBookInputMixin"
   ],
   "client": [
+    "JeiRecipeScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1

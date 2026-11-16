@@ -6,12 +6,12 @@ import com.electronwill.nightconfig.core.io.WritingMode;
 import net.minecraftforge.common.ForgeConfigSpec;
 
 import java.io.File;
-import java.util.ArrayList;
-import java.util.List;
 
 public class CommonConfig {
     public static final ForgeConfigSpec.Builder builder = new ForgeConfigSpec.Builder();
     public static final ForgeConfigSpec config;
+    public enum ProcessorPolicy { PLACER, LAST_INSERT, OUTPUT_ONLY }
+    public static final ForgeConfigSpec.EnumValue<ProcessorPolicy> processorPolicy;
     public static ForgeConfigSpec.BooleanValue debugMode;
 
     static {
@@ -114,12 +114,15 @@ public class CommonConfig {
                          "containerListWhitelist": false,
                          "canBreakBlocks": false,
                          "canRightClickBlocks": false,
-                         "applyToFakePlayers": false,
+                         "applyToFakePlayers": false
                          }
                      }
                        \s
                         Set this value to 'true' whenever you're having issues, this will allow the mod to output everything it tries to do in the log.""")
                 .define("debugMode", false);
+
+        processorPolicy = builder.comment("Recipe policy for furnaces, smokers, blast furnaces and campfires. Unknown owners deny restricted recipes.")
+                .defineEnum("processorRecipePolicy", ProcessorPolicy.PLACER);
 
         builder.pop();
         config = builder.build();

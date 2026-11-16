@@ -38,9 +38,16 @@ public final class RestrictionBuilder {
         return parsed.toString();
     }
     private static String modId(String mod) {
-        if (!mod.matches("[a-z0-9_]+")) throw new IllegalArgumentException("Invalid mod ID: " + mod);
+        if (!mod.matches("[a-z0-9_.-]+")) throw new IllegalArgumentException("Invalid mod ID: " + mod);
         return mod;
     }
+
+    public RestrictionBuilder recipe(String recipe) { array("recipeList").add(id(recipe)); return this; }
+    public RestrictionBuilder recipeMod(String mod) { return entry("recipeList", "mod", modId(mod)); }
+    public RestrictionBuilder recipeTag(String tag) { return entry("recipeList", "tag", id(tag)); }
+    public RestrictionBuilder exceptRecipe(String recipe) { array("recipeExceptionList").add(id(recipe)); return this; }
+    public RestrictionBuilder exceptRecipeMod(String mod) { return entry("recipeExceptionList", "mod", modId(mod)); }
+    public RestrictionBuilder exceptRecipeTag(String tag) { return entry("recipeExceptionList", "tag", id(tag)); }
 
     public RestrictionBuilder item(String id) { return entry("itemList", "item", id(id)); }
     public RestrictionBuilder tag(String id) { array("tagList").add(id(id)); return this; }
@@ -54,6 +61,23 @@ public final class RestrictionBuilder {
     public RestrictionBuilder exceptFluid(String id) { return entry("exceptionList", "fluid", id(id)); }
     public RestrictionBuilder exceptFluidTag(String id) { return entry("exceptionList", "fluidTag", id(id)); }
     public RestrictionBuilder exceptFluidMod(String mod) { return entry("exceptionList", "fluidMod", modId(mod)); }
+
+    /** Hide a block as another block until this restriction's stage is unlocked. */
+    public RestrictionBuilder ore(String block, String replacement) {
+        return blockReplacement("block", block, replacement);
+    }
+
+    public RestrictionBuilder oreTag(String tag, String replacement) {
+        return blockReplacement("tag", tag, replacement);
+    }
+
+    private RestrictionBuilder blockReplacement(String selector, String source, String replacement) {
+        JsonObject rule = new JsonObject();
+        rule.addProperty(selector, id(source));
+        rule.addProperty("replacement", id(replacement));
+        array("blockReplacementList").add(rule);
+        return this;
+    }
 
     public RestrictionBuilder dimension(String dimension) {
         return dimension(dimension, "You don't have access to this dimension");

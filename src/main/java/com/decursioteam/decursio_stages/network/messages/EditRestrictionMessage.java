@@ -7,19 +7,22 @@ import net.minecraft.network.FriendlyByteBuf;
  * The server re-checks permissions and validates everything before touching disk.
  */
 public class EditRestrictionMessage {
+
     public enum Action { SAVE, DELETE }
 
     private final Action action;
     private final String name;
     private final String originalName;
     private final String json;
+    private final String version;
 
     /**
      * @param name         target restriction name (file name without extension)
      * @param originalName name the restriction had when loaded, or empty for a new restriction
      * @param json         full restriction JSON (ignored for DELETE)
      */
-    public EditRestrictionMessage(Action action, String name, String originalName, String json) {
+    public EditRestrictionMessage(Action action, String name, String originalName, String json, String version) {
+        this.version = version;
         this.action = action;
         this.name = name;
         this.originalName = originalName;
@@ -31,7 +34,8 @@ public class EditRestrictionMessage {
         String name = buf.readUtf(128);
         String originalName = buf.readUtf(128);
         String json = JsonPayload.read(buf);
-        return new EditRestrictionMessage(action, name, originalName, json);
+        String version = buf.readUtf(64);
+        return new EditRestrictionMessage(action, name, originalName, json, version);
     }
 
     public void encode(FriendlyByteBuf buf) {
@@ -39,13 +43,16 @@ public class EditRestrictionMessage {
         buf.writeUtf(name, 128);
         buf.writeUtf(originalName, 128);
         JsonPayload.write(buf, json);
+        buf.writeUtf(version, 64);
     }
 
     /** Rough wire size, so the client can refuse to send something the server would drop. */
     public int estimatedSize() {
-        return JsonPayload.compress(json).length + name.length() * 3 + originalName.length() * 3 + 16;
+        if (json.getBytes(java.nio.charset.StandardCharsets.UTF_8).length > JsonPayload.MAX_BYTES) return Integer.MAX_VALUE;
+        return JsonPayload.compress(json).length + name.length() * 3 + originalName.length() * 3 + 84;
     }
 
+    public String getVersion() { return version; }
     public Action getAction() { return action; }
     public String getName() { return name; }
     public String getOriginalName() { return originalName; }
