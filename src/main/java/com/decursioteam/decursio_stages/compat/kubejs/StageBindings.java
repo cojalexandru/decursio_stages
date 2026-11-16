@@ -16,7 +16,7 @@ public final class StageBindings {
     }
 
     private static void requireServerThread(ServerPlayer player) {
-        if (player == null || player.getServer() == null || !player.getServer().isSameThread())
+        if (player == null || player.server == null || !player.server.isSameThread())
             throw new IllegalStateException("Stage methods require a server player on the server thread");
     }
 

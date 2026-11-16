@@ -24,11 +24,18 @@ public class RestrictionCodec {
     protected final List<String> modList;
     protected final List<String> containerList;
     protected final List<ItemExclusion> exceptionList;
+    protected final List<BlockReplacement> blockReplacementList;
+    public List<BlockReplacement> getBlockReplacementList() { return blockReplacementList; }
+    protected final List<RecipeSelector> recipeList, recipeExceptionList;
+    public List<RecipeSelector> getRecipeList() { return recipeList; }
+    public List<RecipeSelector> getRecipeExceptionList() { return recipeExceptionList; }
     protected String name;
     protected String stage;
 
-    private RestrictionCodec(String name, String stage, List<ItemRestriction> itemList, List<FluidRestriction> fluidList, List<ResourceLocation> tagList, List<MobRestriction> mobList, List<DimensionRestriction> dimensionList,  List<StructureRestriction> structureList, List<String> modList, List<String> containerList, List<ItemExclusion> exceptionList) {
+    private RestrictionCodec(String name, String stage, List<ItemRestriction> itemList, List<FluidRestriction> fluidList, List<ResourceLocation> tagList, List<MobRestriction> mobList, List<DimensionRestriction> dimensionList, List<StructureRestriction> structureList, List<String> modList, List<String> containerList, List<ItemExclusion> exceptionList, List<BlockReplacement> blockReplacementList, List<RecipeSelector> recipeList, List<RecipeSelector> recipeExceptionList) {
         this.name = name;
+        this.recipeList = List.copyOf(recipeList);
+        this.recipeExceptionList = List.copyOf(recipeExceptionList);
         this.stage = stage;
         this.itemList = itemList;
         this.fluidList = fluidList;
@@ -39,9 +46,12 @@ public class RestrictionCodec {
         this.modList = modList;
         this.containerList = containerList;
         this.exceptionList = exceptionList;
+        this.blockReplacementList = List.copyOf(blockReplacementList);
     }
 
     private RestrictionCodec(String name) {
+        recipeList = List.of();
+        recipeExceptionList = List.of();
         this.name = name;
         this.itemList = new ArrayList<>();
         this.fluidList = new ArrayList<>();
@@ -52,6 +62,7 @@ public class RestrictionCodec {
         this.modList = new ArrayList<>();
         this.containerList = new ArrayList<>();
         this.exceptionList = new ArrayList<>();
+        this.blockReplacementList = List.of();
     }
 
     public static Codec<RestrictionCodec> codec(String name) {
@@ -66,7 +77,10 @@ public class RestrictionCodec {
                 StructureRestriction.codec().listOf().fieldOf("structureList").orElse(List.of()).forGetter(RestrictionCodec::getStructureList),
                 Codec.STRING.listOf().fieldOf("modList").orElse(List.of()).forGetter(RestrictionCodec::getModList),
                 Codec.STRING.listOf().fieldOf("containerList").orElse(List.of()).forGetter(RestrictionCodec::getContainerList),
-                ItemExclusion.codec().listOf().fieldOf("exceptionList").orElse(List.of()).forGetter(RestrictionCodec::getExceptionList)
+                ItemExclusion.codec().listOf().fieldOf("exceptionList").orElse(List.of()).forGetter(RestrictionCodec::getExceptionList),
+                BlockReplacement.CODEC.listOf().optionalFieldOf("blockReplacementList", List.of()).forGetter(RestrictionCodec::getBlockReplacementList),
+                RecipeSelector.CODEC.listOf().optionalFieldOf("recipeList", List.of()).forGetter(RestrictionCodec::getRecipeList),
+                RecipeSelector.CODEC.listOf().optionalFieldOf("recipeExceptionList", List.of()).forGetter(RestrictionCodec::getRecipeExceptionList)
         ).apply(instance, RestrictionCodec::new));
     }
 
@@ -110,33 +124,7 @@ public class RestrictionCodec {
         return exceptionList;
     }
 
-
     public String getName() {
         return name;
-    }
-
-    public RestrictionCodec toImmutable() {
-        return this;
-    }
-
-    public static class Mutable extends RestrictionCodec {
-
-        public Mutable(String name, String stage, List<ItemRestriction> itemList, List<FluidRestriction> fluidList, List<ResourceLocation> tagList, List<MobRestriction> mobList, List<DimensionRestriction> dimensionList, List<StructureRestriction> structureList, List<String> modList, List<String> containerList, List<ItemExclusion> exceptionList) {
-            super(name, stage, itemList, fluidList, tagList, mobList, dimensionList, structureList, modList, containerList, exceptionList);
-        }
-
-        public Mutable(String name) {
-            super(name);
-        }
-
-        public Mutable setName(String name) {
-            this.name = name;
-            return this;
-        }
-
-        @Override
-        public RestrictionCodec toImmutable() {
-            return new RestrictionCodec(this.name, this.stage, this.itemList, this.fluidList, tagList, this.mobList, this.dimensionList, this.structureList, this.modList, this.containerList, this.exceptionList);
-        }
     }
 }

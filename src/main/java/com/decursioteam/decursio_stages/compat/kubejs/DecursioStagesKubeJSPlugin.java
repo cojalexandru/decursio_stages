@@ -3,10 +3,13 @@ package com.decursioteam.decursio_stages.compat.kubejs;
 import com.decursioteam.decursio_stages.DecursioStages;
 import com.decursioteam.decursio_stages.datagen.ScriptRestrictions;
 import com.decursioteam.decursio_stages.events.UpdateStageEvent;
-import dev.latvian.mods.kubejs.plugin.KubeJSPlugin;
 import dev.latvian.mods.kubejs.event.EventGroup;
+import dev.latvian.mods.kubejs.event.EventGroupRegistry;
 import dev.latvian.mods.kubejs.event.EventHandler;
+import dev.latvian.mods.kubejs.event.EventResult;
+import dev.latvian.mods.kubejs.plugin.KubeJSPlugin;
 import dev.latvian.mods.kubejs.script.BindingRegistry;
+import dev.latvian.mods.kubejs.script.ScriptManager;
 import dev.latvian.mods.kubejs.script.ScriptType;
 import net.minecraft.server.level.ServerPlayer;
 import net.neoforged.neoforge.common.NeoForge;
@@ -21,7 +24,7 @@ public final class DecursioStagesKubeJSPlugin implements KubeJSPlugin {
     public static final EventHandler REMOVED = GROUP.server("stageRemoved", () -> StageEventJS.class);
     public static final EventHandler CLEARED = GROUP.server("stagesCleared", () -> StageEventJS.class);
 
-    @Override public void registerEvents(dev.latvian.mods.kubejs.event.EventGroupRegistry registry) { registry.register(GROUP); }
+    @Override public void registerEvents(EventGroupRegistry registry) { registry.register(GROUP); }
     @Override public void registerBindings(BindingRegistry event) {
         if (event.type() == ScriptType.SERVER) event.add("DecursioStages", StageBindings.class);
     }
@@ -33,14 +36,17 @@ public final class DecursioStagesKubeJSPlugin implements KubeJSPlugin {
         NeoForge.EVENT_BUS.addListener(this::cleared);
         NeoForge.EVENT_BUS.addListener(this::stopped);
     }
-    @Override public void afterScriptsLoaded(dev.latvian.mods.kubejs.script.ScriptManager manager) {
+    @Override public void afterScriptsLoaded(ScriptManager manager) {
         if (manager.scriptType != ScriptType.SERVER) return;
         var event = new RestrictionsEventJS();
         boolean[] failed = {false};
         RESTRICTIONS.exceptionHandler((e, handler, error) -> { failed[0] = true; return error; });
-        var result = RESTRICTIONS.post(event);
-        RESTRICTIONS.exceptionHandler(null);
-        if (result.type() == dev.latvian.mods.kubejs.event.EventResult.Type.ERROR) failed[0] = true;
+        try {
+            var result = RESTRICTIONS.post(event);
+            if (result.type() == EventResult.Type.ERROR) failed[0] = true;
+        } finally {
+            RESTRICTIONS.exceptionHandler(null);
+        }
         if (failed[0]) {
             DecursioStages.LOGGER.error("Keeping previous script restrictions because a KubeJS handler failed");
             return;

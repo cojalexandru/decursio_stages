@@ -1,0 +1,9 @@
+{
+  "Restriction Data": {
+    "stage": "iron_age",
+    "blockReplacementList": [
+      { "block": "minecraft:iron_ore", "replacement": "minecraft:stone" },
+      { "block": "minecraft:deepslate_iron_ore", "replacement": "minecraft:deepslate" }
+    ]
+  }
+}

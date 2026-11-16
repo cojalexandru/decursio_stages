@@ -1,47 +1,69 @@
 package com.decursioteam.decursio_stages.compat.plugins;
 
+import com.decursioteam.decursio_stages.client.ClientRecipeVisibility;
 import com.decursioteam.decursio_stages.client.screens.RestrictEditorScreen;
-import dev.emi.emi.api.widget.Bounds;
-import net.minecraft.world.level.material.Fluid;
-
-import com.decursioteam.decursio_stages.Registry;
-import com.decursioteam.decursio_stages.config.CommonConfig;
 import com.decursioteam.decursio_stages.datagen.RestrictionsData;
-import com.decursioteam.decursio_stages.datagen.utils.IStagesData;
+import com.decursioteam.decursio_stages.events.RestrictionsChangedEvent;
 import com.decursioteam.decursio_stages.events.SyncStagesEvent;
+import com.decursioteam.decursio_stages.recipes.RecipeVisibilityIndex;
+import com.decursioteam.decursio_stages.utils.ResourceUtil;
 import com.decursioteam.decursio_stages.utils.StageUtil;
 import dev.emi.emi.api.EmiEntrypoint;
 import dev.emi.emi.api.EmiPlugin;
 import dev.emi.emi.api.EmiRegistry;
 import dev.emi.emi.api.stack.EmiStack;
+import dev.emi.emi.api.widget.Bounds;
 import dev.emi.emi.runtime.EmiReloadManager;
 import net.minecraft.client.Minecraft;
 import net.minecraft.resources.ResourceLocation;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
+import net.minecraft.world.level.material.Fluid;
+import net.neoforged.fml.util.thread.EffectiveSide;
+import net.neoforged.neoforge.client.event.ClientPlayerNetworkEvent;
+import net.neoforged.neoforge.client.event.ClientTickEvent;
 import net.neoforged.neoforge.client.event.RecipesUpdatedEvent;
 import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.bus.api.EventPriority;
-import net.neoforged.fml.util.thread.EffectiveSide;
-import net.minecraft.core.registries.BuiltInRegistries;
+import net.neoforged.neoforge.event.TagsUpdatedEvent;
 
+import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
-
-import static com.decursioteam.decursio_stages.DecursioStages.LOGGER;
-import static com.decursioteam.decursio_stages.utils.ResourceUtil.*;
 
 @EmiEntrypoint
 public class DecursioStagesEMI implements EmiPlugin {
 
-    private static final Set<ResourceLocation> hiddenItemIds = new HashSet<>();
-    private static final Set<EmiStack> hiddenFluidIds = new HashSet<>();
+    private long recipeRevision = -1;
+    private boolean reloadPending;
 
     public DecursioStagesEMI() {
-        if(EffectiveSide.get().isClient()){
-            NeoForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, SyncStagesEvent.class, e -> this.reloadEMI());
-            NeoForge.EVENT_BUS.addListener(EventPriority.LOW, false, RecipesUpdatedEvent.class, e -> this.reloadEMI());
+        if (EffectiveSide.get().isClient()) {
+            NeoForge.EVENT_BUS.addListener((SyncStagesEvent event) -> onClient(() -> reloadPending = true));
+            NeoForge.EVENT_BUS.addListener((RestrictionsChangedEvent event) -> onClient(() -> reloadPending = true));
+            NeoForge.EVENT_BUS.addListener((RecipesUpdatedEvent event) -> onClient(() -> reloadPending = true));
+            NeoForge.EVENT_BUS.addListener((TagsUpdatedEvent event) -> onClient(() -> reloadPending = true));
+            NeoForge.EVENT_BUS.addListener((ClientPlayerNetworkEvent.LoggingOut event) -> onClient(() -> {
+                reloadPending = false;
+                recipeRevision = -1;
+            }));
+            NeoForge.EVENT_BUS.addListener((ClientTickEvent.Post event) -> tick());
         }
+    }
+
+    private static void onClient(Runnable work) {
+        Minecraft.getInstance().execute(work);
+    }
+
+    private void tick() {
+        long revision = ClientRecipeVisibility.revision();
+        if (recipeRevision != revision) {
+            recipeRevision = revision;
+            reloadPending = true;
+        }
+        var mc = Minecraft.getInstance();
+        if (!reloadPending || mc.level == null || mc.player == null) return;
+        reloadPending = false;
+        EmiReloadManager.reload();
     }
 
     @Override
@@ -56,113 +78,45 @@ public class DecursioStagesEMI implements EmiPlugin {
             if (stack.getKey() instanceof Fluid fluid) return screen.acceptFluid(fluid);
             return screen.acceptItem(stack.getItemStack());
         });
-        collectHiddenResources();
-        hideResources(registry);
-    }
 
-    private void reloadEMI() {
-        // Clear previous data
-        hiddenItemIds.clear();
-        hiddenFluidIds.clear();
-
-        // Force EMI to reload
-        if (Minecraft.getInstance().level != null) {
-            EmiReloadManager.reload();
-        }
-    }
-
-    private void collectHiddenResources() {
-        final Player player = Minecraft.getInstance().player;
+        var player = Minecraft.getInstance().player;
         if (player == null) return;
-
-        final IStagesData stageData = StageUtil.getPlayerData(player);
+        var stageData = StageUtil.getPlayerData(player);
         if (stageData == null) return;
 
-        try {
-            Registry.getRestrictionsHashSet().forEach((s) -> {
-                String stage = RestrictionsData.getRestrictionData(s).getData().getStage();
+        var restrictions = RestrictionsData.getRegistry();
+        List<String> hiddenRules = new ArrayList<>();
+        restrictions.getRestrictions().forEach((id, data) -> {
+            if (data.getSettingsCodec().getHideInJEI() && !stageData.hasStage(data.getData().getStage())) {
+                hiddenRules.add(id);
+            }
+        });
 
-                if (!stageData.hasStage(stage) && RestrictionsData.getRestrictionData(s).getSettingsCodec().getHideInJEI()) {
-
-                    //Collect fluids from the fluid list and from restricted mods
-                    if (!getFluids(s).isEmpty() || !getMods(s).isEmpty()) {
-                        BuiltInRegistries.FLUID.forEach(fluidEntry -> {
-                            if (fluidEntry.isSource(fluidEntry.defaultFluidState()) && isFluidRestricted(s, fluidEntry)) {
-                                hiddenFluidIds.add(EmiStack.of(fluidEntry));
-                            }
-                        });
+        if (!hiddenRules.isEmpty()) {
+            registry.removeEmiStacks(emiStack -> {
+                if (emiStack.getKey() instanceof Fluid fluid) {
+                    for (String id : hiddenRules) {
+                        if (ResourceUtil.isFluidRestricted(id, fluid)) return true;
                     }
-
-                    //Collect items from mod list
-                    if (!getMods(s).isEmpty()) {
-                        BuiltInRegistries.ITEM.forEach(item -> {
-                            ItemStack itemStack = new ItemStack(item);
-                            if(check(s, itemStack, CHECK_TYPES.MOD)) {
-                                ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(item);
-                                if (itemId != null) {
-                                    hiddenItemIds.add(itemId);
-                                }
-                            }
-                        });
-                    }
-
-                    //Collect items from tag list
-                    if(!getTags(s).isEmpty()) {
-                        BuiltInRegistries.ITEM.forEach(item -> {
-                            ItemStack itemStack = new ItemStack(item);
-                            if(check(s, itemStack, CHECK_TYPES.TAG)) {
-                                ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(item);
-                                if (itemId != null) hiddenItemIds.add(itemId);
-                            }
-                        });
-                    }
-
-                    //Collect items from item list
-                    if (!getItems(s).isEmpty()) {
-                        BuiltInRegistries.ITEM.forEach(item -> {
-                            ItemStack itemStack = new ItemStack(item);
-                            if(check(s, itemStack, CHECK_TYPES.ITEM)) {
-                                ResourceLocation itemId = BuiltInRegistries.ITEM.getKey(item);
-                                if (itemId != null) hiddenItemIds.add(itemId);
-                            }
-                        });
-                    }
+                    return false;
                 }
+                ItemStack stack = emiStack.getItemStack();
+                if (stack.isEmpty()) return false;
+                for (String id : hiddenRules) {
+                    if (restrictions.compiled(id).matches(stack, ResourceUtil.CHECK_TYPES.ALL)) return true;
+                }
+                return false;
             });
         }
-        catch (Exception e){
-            if(CommonConfig.debugMode.get())
-                LOGGER.error("Error collecting hidden resources", e);
+
+        Set<ResourceLocation> blockedRecipes = ClientRecipeVisibility.blocked();
+        if (!blockedRecipes.isEmpty()) {
+            registry.removeRecipes(recipe -> {
+                Set<ResourceLocation> ids = new HashSet<>();
+                if (recipe.getId() != null) ids.add(recipe.getId());
+                if (recipe.getBackingRecipe() != null) ids.add(recipe.getBackingRecipe().id());
+                return RecipeVisibilityIndex.hidden(ids, blockedRecipes);
+            });
         }
-
-        if(CommonConfig.debugMode.get()) {
-            LOGGER.info("Total items to hide: {}", hiddenItemIds.size());
-            LOGGER.info("Total fluids to hide: {}", hiddenFluidIds.size());
-        }
-    }
-
-    private void hideResources(EmiRegistry registry) {
-        if (hiddenItemIds.isEmpty() && hiddenFluidIds.isEmpty()) {
-            if(CommonConfig.debugMode.get())
-                LOGGER.warn("No items or fluids to hide in EMI");
-            return;
-        }
-
-        if(CommonConfig.debugMode.get())
-            LOGGER.info("Hiding {} items and {} fluids in EMI", hiddenItemIds.size(), hiddenFluidIds.size());
-
-        // Hide items and fluids using ResourceLocation comparison
-        registry.removeEmiStacks(emiStack -> {
-            ResourceLocation stackId = emiStack.getId();
-
-            // Check if this stack should be hidden
-            boolean shouldHide = hiddenItemIds.contains(stackId) || hiddenFluidIds.contains(emiStack);
-
-            if (shouldHide && CommonConfig.debugMode.get()) {
-                LOGGER.info("Hiding stack: {}", stackId);
-            }
-
-            return shouldHide;
-        });
     }
 }

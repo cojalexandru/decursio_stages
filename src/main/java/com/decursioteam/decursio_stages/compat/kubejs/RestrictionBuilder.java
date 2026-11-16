@@ -1,9 +1,13 @@
 package com.decursioteam.decursio_stages.compat.kubejs;
 
+import com.decursioteam.decursio_stages.mobstaging.MobRestriction;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
+import com.mojang.serialization.JsonOps;
 import net.minecraft.resources.ResourceLocation;
+import net.minecraft.world.entity.MobSpawnType;
+
 import java.util.Set;
 
 /** Fluent builder for the existing restriction JSON schema. */
@@ -20,6 +24,7 @@ public final class RestrictionBuilder {
         root.add("Restriction Data", data);
         root.add("Settings", settings);
     }
+
     JsonObject json() { return root; }
 
     private RestrictionBuilder entry(String list, String key, String value) {
@@ -28,19 +33,29 @@ public final class RestrictionBuilder {
         array(list).add(entry);
         return this;
     }
+
     private JsonArray array(String key) {
         if (!data.has(key)) data.add(key, new JsonArray());
         return data.getAsJsonArray(key);
     }
+
     private static String id(String id) {
         ResourceLocation parsed = ResourceLocation.tryParse(id);
         if (parsed == null) throw new IllegalArgumentException("Invalid resource ID: " + id);
         return parsed.toString();
     }
+
     private static String modId(String mod) {
-        if (!mod.matches("[a-z0-9_]+")) throw new IllegalArgumentException("Invalid mod ID: " + mod);
+        if (!mod.matches("[a-z0-9_.-]+")) throw new IllegalArgumentException("Invalid mod ID: " + mod);
         return mod;
     }
+
+    public RestrictionBuilder recipe(String recipe) { array("recipeList").add(id(recipe)); return this; }
+    public RestrictionBuilder recipeMod(String mod) { return entry("recipeList", "mod", modId(mod)); }
+    public RestrictionBuilder recipeTag(String tag) { return entry("recipeList", "tag", id(tag)); }
+    public RestrictionBuilder exceptRecipe(String recipe) { array("recipeExceptionList").add(id(recipe)); return this; }
+    public RestrictionBuilder exceptRecipeMod(String mod) { return entry("recipeExceptionList", "mod", modId(mod)); }
+    public RestrictionBuilder exceptRecipeTag(String tag) { return entry("recipeExceptionList", "tag", id(tag)); }
 
     public RestrictionBuilder item(String id) { return entry("itemList", "item", id(id)); }
     public RestrictionBuilder tag(String id) { array("tagList").add(id(id)); return this; }
@@ -54,6 +69,23 @@ public final class RestrictionBuilder {
     public RestrictionBuilder exceptFluid(String id) { return entry("exceptionList", "fluid", id(id)); }
     public RestrictionBuilder exceptFluidTag(String id) { return entry("exceptionList", "fluidTag", id(id)); }
     public RestrictionBuilder exceptFluidMod(String mod) { return entry("exceptionList", "fluidMod", modId(mod)); }
+
+    /** Hide a block as another block until this restriction's stage is unlocked. */
+    public RestrictionBuilder ore(String block, String replacement) {
+        return blockReplacement("block", block, replacement);
+    }
+
+    public RestrictionBuilder oreTag(String tag, String replacement) {
+        return blockReplacement("tag", tag, replacement);
+    }
+
+    private RestrictionBuilder blockReplacement(String selector, String source, String replacement) {
+        JsonObject rule = new JsonObject();
+        rule.addProperty(selector, id(source));
+        rule.addProperty("replacement", id(replacement));
+        array("blockReplacementList").add(rule);
+        return this;
+    }
 
     public RestrictionBuilder dimension(String dimension) {
         return dimension(dimension, "You don't have access to this dimension");
@@ -114,7 +146,7 @@ public final class RestrictionBuilder {
         if (!entry.get("spawnType").isJsonArray() || entry.getAsJsonArray("spawnType").isEmpty())
             throw new IllegalArgumentException("spawnType must be a nonempty array");
         for (JsonElement type : entry.getAsJsonArray("spawnType"))
-            net.minecraft.world.entity.MobSpawnType.valueOf(type.getAsString());
+            MobSpawnType.valueOf(type.getAsString());
         if (!entry.has("whitelist_blacklist")) entry.addProperty("whitelist_blacklist", "BLACKLIST");
         if (!Set.of("BLACKLIST", "WHITELIST").contains(entry.get("whitelist_blacklist").getAsString()))
             throw new IllegalArgumentException("whitelist_blacklist must be BLACKLIST or WHITELIST");
@@ -131,9 +163,9 @@ public final class RestrictionBuilder {
         if (entry.has("minLight") && entry.has("maxLight") && entry.get("minLight").getAsInt() > entry.get("maxLight").getAsInt())
             throw new IllegalArgumentException("minLight cannot exceed maxLight");
         // Validate this entry directly: the outer restriction codec defaults malformed lists to empty.
-        com.decursioteam.decursio_stages.mobstaging.MobRestriction.codec()
-                .parse(com.mojang.serialization.JsonOps.INSTANCE, entry)
-                .getOrThrow( error -> { throw new IllegalArgumentException("Invalid mob rule: " + error); });
+        MobRestriction.codec()
+                .parse(JsonOps.INSTANCE, entry)
+                .getOrThrow(error -> { throw new IllegalArgumentException("Invalid mob rule: " + error); });
         array("mobList").add(entry);
         return this;
     }

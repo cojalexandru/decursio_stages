@@ -6,11 +6,12 @@ import com.decursioteam.decursio_stages.commands.arguments.RestrictionArgumentTy
 import com.decursioteam.decursio_stages.commands.arguments.StageArgumentType;
 import com.decursioteam.decursio_stages.commands.arguments.TooltipArgumentType;
 import com.decursioteam.decursio_stages.datagen.RestrictionsData;
-import com.decursioteam.decursio_stages.datagen.utils.FileUtils;
 import com.decursioteam.decursio_stages.network.RestrictionEditorServer;
+import com.decursioteam.decursio_stages.persistence.RestrictionSaveService;
 import com.decursioteam.decursio_stages.utils.ResourceUtil;
 import com.decursioteam.decursio_stages.utils.StageUtil;
 import com.decursioteam.decursio_stages.utils.StagesHandler;
+import com.google.gson.JsonObject;
 import com.mojang.brigadier.Command;
 import com.mojang.brigadier.arguments.BoolArgumentType;
 import com.mojang.brigadier.arguments.IntegerArgumentType;
@@ -32,26 +33,17 @@ import net.minecraft.server.level.ServerPlayer;
 import net.minecraft.world.InteractionHand;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.bus.api.IEventBus;
 import net.neoforged.fml.loading.FMLPaths;
+import net.neoforged.neoforge.common.NeoForge;
+import net.neoforged.neoforge.event.RegisterCommandsEvent;
 import net.neoforged.neoforge.registries.DeferredRegister;
 
-
-import java.io.IOException;
-import java.nio.file.FileAlreadyExistsException;
-import java.nio.file.Files;
-import java.nio.file.Path;
-import java.nio.file.Paths;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.Objects;
 import java.util.Set;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.Collectors;
-
-import static com.decursioteam.decursio_stages.datagen.utils.FileUtils.restrictionExists;
 
 public class DecStagesCommands {
 
@@ -88,6 +80,7 @@ public class DecStagesCommands {
                             RestrictionEditorServer.open(ctx.getSource().getPlayerOrException(), StringArgumentType.getString(ctx, "restriction"), null, false);
                             return Command.SINGLE_SUCCESS;
                         })));
+        DiagnosticCommands.register(command, event.getBuildContext());
         event.getDispatcher().register(command);
     }
 
@@ -135,11 +128,13 @@ public class DecStagesCommands {
     }
 
     private static int reloadStages (CommandContext<CommandSourceStack> ctx) {
-        RestrictionsData.getRegistry().clearRawRestrictionsData();
-        Registry.setupRestrictions();
+        if (!Registry.setupRestrictions()) {
+            ctx.getSource().sendFailure(Component.literal("Restriction reload failed; last working rules remain active. Use /decstages diagnose reload for source and error details."));
+            return 0;
+        }
         Registry.registerRestrictionsList();
 
-        ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.reloadstages", StagesHandler.getStages()), true);
+        ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.reloadstages", StagesHandler.getStages().toString()), true);
         return 0;
     }
 
@@ -259,20 +254,6 @@ public class DecStagesCommands {
         return 0;
     }
 
-    private static Path createCustomPath(String pathName) {
-        Path customPath = Paths.get(FMLPaths.CONFIGDIR.get().toAbsolutePath().toString(), DecursioStages.MOD_ID, pathName);
-        createDirectory(customPath, pathName);
-        return customPath;
-    }
-    private static void createDirectory(Path path, String dirName) {
-        try {
-            Files.createDirectories(path);
-        } catch (FileAlreadyExistsException ignored) {
-        } catch (IOException e) {
-            DecursioStages.LOGGER.error("failed to create \"{}\" directory", dirName);
-        }
-    }
-
     private static void giveStages(CommandContext<CommandSourceStack> ctx, ServerPlayer player) {
         for(final String knownStage : StageUtil.getStages()) StageUtil.addStage(player, knownStage);
         ctx.getSource().sendSuccess(() -> Component.translatable("decursio_stages.commands.all.target"), true);
@@ -315,28 +296,26 @@ public class DecStagesCommands {
 
         String itemName = ResourceUtil.getRegistryName(heldItem.getItem()).toString();
 
-
-        AtomicInteger counter = new AtomicInteger();
-        RestrictionsData.getRegistry().getRawRestrictions().forEach((restriction, x) -> {
-            if (restrictionExists(restriction, stage, advancedTooltips, itemTitle, pickupDelay,
-                    hideInJEI, canPickup, containerListWhitelist, checkPlayerInventory,
-                    checkPlayerEquipment, usableItems, usableBlocks, destroyableBlocks)) { // Also check by expected ID
-
-                FileUtils.restrictItem(stage, advancedTooltips, itemTitle, pickupDelay, hideInJEI,
-                        canPickup, containerListWhitelist, checkPlayerInventory, checkPlayerEquipment,
-                        usableItems, usableBlocks, destroyableBlocks, heldItem);
-                counter.getAndIncrement();
-            }
-        });
-
-        if (counter.get() == 0) {
-            FileUtils.addRestriction(stage, advancedTooltips, itemTitle, pickupDelay, hideInJEI,
-                    canPickup, containerListWhitelist, checkPlayerInventory, checkPlayerEquipment,
-                    usableItems, usableBlocks, destroyableBlocks);
-
-            FileUtils.restrictItem(stage, advancedTooltips, itemTitle, pickupDelay, hideInJEI,
-                    canPickup, containerListWhitelist, checkPlayerInventory, checkPlayerEquipment,
-                    usableItems, usableBlocks, destroyableBlocks, heldItem);
+        JsonObject settings = new JsonObject();
+        settings.addProperty("advancedTooltips", advancedTooltips);
+        settings.addProperty("itemsTitle", itemTitle);
+        settings.addProperty("itemsPickupDelay", pickupDelay);
+        settings.addProperty("hideInJEI_REI", hideInJEI);
+        settings.addProperty("canPickupItems", canPickup);
+        settings.addProperty("containerListWhitelist", containerListWhitelist);
+        settings.addProperty("dropItemsFromInventory", checkPlayerInventory);
+        settings.addProperty("dropArmorFromInventory", checkPlayerEquipment);
+        settings.addProperty("canUseItems", usableItems);
+        settings.addProperty("canRightClickBlocks", usableBlocks);
+        settings.addProperty("canBreakBlocks", destroyableBlocks);
+        try {
+            RestrictionSaveService.restrict(
+                    FMLPaths.CONFIGDIR.get().resolve(DecursioStages.MOD_ID).resolve("restrictions"),
+                    stage, settings, heldItem);
+        } catch (Exception error) {
+            DecursioStages.LOGGER.error("/decstages restrict failed", error);
+            ctx.getSource().sendFailure(Component.literal("Restriction was not saved: " + error.getMessage()));
+            return 0;
         }
 
         Component itemComponent = Component.literal(itemName).withStyle(ChatFormatting.AQUA);
@@ -345,9 +324,6 @@ public class DecStagesCommands {
         ctx.getSource().sendSuccess(() -> Component.translatable(
                 "decursio_stages.commands.restrictitem.success",
                 itemComponent, stageComponent), true);
-
-        Registry.setupRestrictions();
-        Registry.registerRestrictionsList();
 
         return 1;
     }

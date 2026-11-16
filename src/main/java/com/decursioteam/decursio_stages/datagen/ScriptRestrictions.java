@@ -19,7 +19,9 @@ public final class ScriptRestrictions {
     public static boolean contains(String name) { return definitions.containsKey(name); }
 
     public static void apply(RestrictionsData registry) {
-        definitions.forEach((name, json) -> registry.cacheRawRestrictionsData(name, json.deepCopy()));
+        definitions.forEach((name, json) -> {
+            registry.addDefinition(name, json, "KubeJS server_scripts: DecursioStagesEvents.restrictions / " + name);
+        });
     }
 
     public static void clear() { definitions = Map.of(); }

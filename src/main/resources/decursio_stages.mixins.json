@@ -4,8 +4,35 @@
   "package": "com.decursioteam.decursio_stages.mixin",
   "compatibilityLevel": "JAVA_21",
   "mixins": [
+    "ChunkPacketDataAccessor",
+    "SectionUpdateAccessor",
+    "OrePacketMixin",
+    "OreMiningMixin",
+    "OreBlockCacheMixin",
+    "OreLightCacheMixin",
+    "OreJadeMixin",
+    "OreProbeMixin",
+    "RecipeCraftingMixin",
+    "RecipeClickMixin",
+    "RecipeQuickMoveMixin",
+    "RecipeRemainderMixin",
+    "SmithingRecipeMixin",
+    "StonecuttingRecipeMixin",
+    "WorkstationQuickMoveMixin",
+    "FurnaceRecipeMixin",
+    "CrafterRecipeMixin",
+    "CampfireRecipeMixin",
+    "CampfireProgress",
+    "ProcessorInputMixin",
+    "FurnaceOutputMixin",
+    "FurnaceQuickMoveMixin",
+    "ProcessorDropsMixin",
+    "ProcessorQuickInputMixin",
+    "ProcessorBookInputMixin",
+    "CrafterPreviewMixin"
   ],
   "client": [
+    "JeiRecipeScreenMixin"
   ],
   "injectors": {
     "defaultRequire": 1
