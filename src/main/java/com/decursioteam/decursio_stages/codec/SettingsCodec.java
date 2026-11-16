@@ -2,7 +2,6 @@ package com.decursioteam.decursio_stages.codec;
 
 import com.mojang.serialization.Codec;
 import com.mojang.serialization.codecs.RecordCodecBuilder;
-import net.minecraft.world.entity.player.Player;
 
 public class SettingsCodec {
 
@@ -97,23 +96,6 @@ public class SettingsCodec {
 
     public boolean getDestroyableBlocks() {
         return destroyableBlocks;
-    }
-
-    public SettingsCodec toImmutable() {
-        return this;
-    }
-
-    public static class Mutable extends SettingsCodec {
-
-        public Mutable(String advancedTooltips, String itemTitle, int pickupDelay, boolean hideInJEI, boolean canPickup, boolean checkPlayerInventory, boolean checkPlayerEquipment, boolean usableItems, boolean usableBlocks, boolean destroyableBlocks, boolean containerListWhitelist, boolean applyToFakePlayers) {
-            super(advancedTooltips, itemTitle, pickupDelay, hideInJEI, canPickup, checkPlayerInventory, checkPlayerEquipment, usableItems, usableBlocks, destroyableBlocks, containerListWhitelist, applyToFakePlayers);
-        }
-
-        @Override
-        public SettingsCodec toImmutable() {
-            Player player;
-            return new SettingsCodec(this.advancedTooltips, this.itemTitle, this.pickupDelay, this.hideInJEI, this.canPickup, this.checkPlayerInventory, this.checkPlayerEquipment, this.usableItems, this.usableBlocks, this.destroyableBlocks, this.containerListWhitelist, this.applyToFakePlayers);
-        }
     }
 }
 

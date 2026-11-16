@@ -13,7 +13,10 @@ import net.minecraft.world.level.lighting.ChunkSkyLightSources;
 import net.minecraft.world.level.lighting.LevelLightEngine;
 import net.minecraft.world.level.material.FluidState;
 
+import java.util.ArrayList;
+import java.util.BitSet;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.function.BiConsumer;
 
@@ -21,9 +24,41 @@ import java.util.function.BiConsumer;
 public final class OreLighting {
     private OreLighting() {}
 
+    static final class BlockLight {
+        static final BlockLight UNCHANGED = new BlockLight(null, null, List.of());
+        final BitSet mask, empty;
+        final List<byte[]> layers;
+        BlockLight(BitSet mask, BitSet empty, List<byte[]> layers) { this.mask = mask; this.empty = empty; this.layers = layers; }
+        boolean changed() { return mask != null; }
+        long bytes() { return 128L + layers.size() * 2048L; }
+        void apply(ClientboundLightUpdatePacketData data) {
+            if (!changed()) return;
+            data.getBlockYMask().clear(); data.getBlockYMask().or(mask);
+            data.getEmptyBlockYMask().clear(); data.getEmptyBlockYMask().or(empty);
+            data.getBlockUpdates().clear();
+            for (byte[] layer : layers) data.getBlockUpdates().add(layer.clone());
+        }
+    }
+
+    public static void rewrite(ClientboundLightUpdatePacketData data, int x, int z, OreStages.View view) {
+        correction(x, z, view).apply(data);
+    }
+
+    static BlockLight correction(int x, int z, OreStages.View view) {
+        var cache = OreViewCache.state(view.level);
+        var pos = new ChunkPos(x, z);
+        var key = new OreViewCache.LightKey(view.profile, pos);
+        long stamp = cache.stamp(pos);
+        BlockLight cached = cache.light(key, stamp);
+        if (cached != null) return cached;
+        BlockLight result = build(x, z, view);
+        cache.light(key, stamp, result);
+        return result;
+    }
+
     // Block light travels at most 14 blocks from a level-15 emitter. A one-chunk border
     // therefore contains every source/path that can affect the central chunk.
-    public static void rewrite(ClientboundLightUpdatePacketData data, int x, int z, OreStages.View view) {
+    private static BlockLight build(int x, int z, OreStages.View view) {
         Map<ChunkPos, MaskedChunk> chunks = new HashMap<>();
         boolean[] affected = {false};
         for (int cx = x - 1; cx <= x + 1; cx++) for (int cz = z - 1; cz <= z + 1; cz++) {
@@ -34,13 +69,13 @@ public final class OreLighting {
                 if (view.replace(real) != real) affected[0] = true;
             });
         }
-        if (!affected[0]) return;
+        if (!affected[0]) return BlockLight.UNCHANGED;
 
         LevelLightEngine engine = calculate(new LightChunkGetter() {
             @Override public LightChunk getChunkForLighting(int cx, int cz) { return chunks.get(new ChunkPos(cx, cz)); }
             @Override public BlockGetter getLevel() { return view.level; }
         }, chunks, (pos, index) -> chunks.get(pos).chunk.getSection(index).hasOnlyAir());
-        applyBlockLight(data, engine, x, z);
+        return capture(engine, x, z);
     }
 
     static LevelLightEngine calculate(LightChunkGetter source, Map<ChunkPos, ? extends LightChunk> chunks,
@@ -59,20 +94,16 @@ public final class OreLighting {
         return engine;
     }
 
-    static void applyBlockLight(ClientboundLightUpdatePacketData data, LevelLightEngine engine, int x, int z) {
-        data.getBlockYMask().clear();
-        data.getEmptyBlockYMask().clear();
-        data.getBlockUpdates().clear();
-        // Include explicit zero layers: omitting them would leave the old glow in the client.
+    private static BlockLight capture(LevelLightEngine engine, int x, int z) {
+        BitSet mask = new BitSet(), empty = new BitSet();
+        List<byte[]> layers = new ArrayList<>();
+        // Explicit zero layers clear old glow. Skylight remains the source packet's data.
         for (int i = 0; i < engine.getLightSectionCount(); i++) {
             var layer = engine.getLayerListener(LightLayer.BLOCK).getDataLayerData(SectionPos.of(x, engine.getMinLightSection() + i, z));
-            if (layer == null || layer.isEmpty()) data.getEmptyBlockYMask().set(i);
-            else {
-                data.getBlockYMask().set(i);
-                data.getBlockUpdates().add(layer.getData().clone());
-            }
+            if (layer == null || layer.isEmpty()) empty.set(i);
+            else { mask.set(i); layers.add(layer.getData().clone()); }
         }
-        // Skylight is unchanged: both original and replacement are opaque full cubes.
+        return new BlockLight(mask, empty, List.copyOf(layers));
     }
 
     private record MaskedChunk(LevelChunk chunk, OreStages.View view) implements LightChunk {

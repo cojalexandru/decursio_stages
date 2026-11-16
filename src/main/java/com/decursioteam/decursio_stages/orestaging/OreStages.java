@@ -37,6 +37,7 @@ public final class OreStages {
         final Deque<net.minecraft.world.level.ChunkPos> pending = new ArrayDeque<>();
         List<Rule> active = List.of();
         Map<BlockState, BlockState> states = Map.of();
+        OreViewCache.Profile profile = new OreViewCache.Profile(Map.of());
         View(ServerLevel level) { this.level = level; }
         public BlockState replace(BlockState state) { return states.getOrDefault(state, state); }
         public boolean empty() { return states.isEmpty(); }
@@ -97,6 +98,7 @@ public final class OreStages {
             if (!states.isEmpty()) next.add(new Rule(restriction.getData().getStage().toLowerCase(Locale.ROOT),
                     restriction.getSettingsCodec().getApplyToFakePlayers(), Map.copyOf(states)));
         });
+        OreViewCache.clear();
         rules = List.copyOf(next);
         revision = registry.revision();
     }
@@ -116,6 +118,7 @@ public final class OreStages {
             view.refreshStates.addAll(view.states.keySet());
             view.refreshStates.addAll(states.keySet());
             view.states = Map.copyOf(states);
+            view.profile = new OreViewCache.Profile(view.states);
             view.active = active;
             view.pending.clear();
             view.pending.addAll(view.chunks);
@@ -153,5 +156,5 @@ public final class OreStages {
     }
 
     @SubscribeEvent public void logout(PlayerEvent.PlayerLoggedOutEvent event) { VIEWS.remove(event.getEntity().getUUID()); }
-    @SubscribeEvent public void stopped(ServerStoppedEvent event) { VIEWS.clear(); rules = List.of(); revision = -1; }
+    @SubscribeEvent public void stopped(ServerStoppedEvent event) { VIEWS.clear(); OreViewCache.clear(); rules = List.of(); revision = -1; }
 }

@@ -2,15 +2,39 @@ package com.decursioteam.decursio_stages.utils;
 
 import com.decursioteam.decursio_stages.restrictions.ItemRestriction;
 import com.google.gson.JsonElement;
-import com.google.gson.JsonParser;
 import com.mojang.serialization.Dynamic;
 import com.mojang.serialization.JsonOps;
 import net.minecraft.nbt.*;
 import net.minecraft.world.item.ItemStack;
-import java.util.regex.Pattern;
+import java.util.*;
 
 public class NBTComparisonUtil {
     public static final String WILDCARD_MARKER = "*";
+    private static final Map<String, List<String>> WILDCARDS = new LinkedHashMap<>(16, .75f, true);
+    private static synchronized List<String> wildcardParts(String pattern) {
+        List<String> parts = WILDCARDS.get(pattern);
+        if (parts == null) {
+            parts = List.of(pattern.split("\\*", -1));
+            WILDCARDS.put(pattern, parts);
+            if (WILDCARDS.size() > 256) WILDCARDS.remove(WILDCARDS.keySet().iterator().next());
+        }
+        return parts;
+    }
+
+    /** Only * is special. All other characters, including regex syntax, are literal. */
+    public static boolean matchesWildcard(String pattern, String value) {
+        List<String> parts = wildcardParts(pattern);
+        if (parts.size() == 1) return pattern.equals(value);
+        String first = parts.getFirst(), last = parts.getLast();
+        if (!value.startsWith(first) || !value.endsWith(last)) return false;
+        int cursor = first.length();
+        for (int i = 1; i + 1 < parts.size(); i++) {
+            int found = value.indexOf(parts.get(i), cursor);
+            if (found < 0) return false;
+            cursor = found + parts.get(i).length();
+        }
+        return cursor <= value.length() - last.length();
+    }
 
     public static boolean areNBTCompoundsEqual(CompoundTag tag1, CompoundTag tag2) {
         if (tag1 == tag2) return true;
@@ -33,8 +57,7 @@ public class NBTComparisonUtil {
                 return true;
             } else if (str.contains(WILDCARD_MARKER)) {
                 if (!(element2 instanceof StringTag)) return false;
-                String pattern = str.replace(WILDCARD_MARKER, ".*");
-                return Pattern.compile(pattern).matcher(((StringTag) element2).value()).matches();
+                return matchesWildcard(str, ((StringTag) element2).value());
             }
         }
 
@@ -51,15 +74,6 @@ public class NBTComparisonUtil {
         if (element1 instanceof NumericTag && element2 instanceof NumericTag) {
             NumericTag num1 = (NumericTag) element1;
             NumericTag num2 = (NumericTag) element2;
-
-            if (element1 instanceof ByteTag && element2 instanceof ByteTag) {
-                byte b1 = ((ByteTag) element1).byteValue();
-                byte b2 = ((ByteTag) element2).byteValue();
-
-                if ((b1 == 0 || b1 == 1) && (b2 == 0 || b2 == 1)) {
-                    return b1 == b2;
-                }
-            }
 
             if (isIntegerType(num1) && isIntegerType(num2)) {
                 return num1.longValue() == num2.longValue();
@@ -161,15 +175,6 @@ public class NBTComparisonUtil {
         return result;
     }
 
-    public static CompoundTag parseJsonToNbt(String jsonString) {
-        try {
-            JsonElement json = JsonParser.parseString(jsonString);
-            return jsonToNbt(json);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
     public static boolean doesItemMatchRestriction(ItemRestriction restrictionItem, ItemStack itemStack) {
         if (!itemStack.is(restrictionItem.getItem())) {
             return false;
@@ -205,37 +210,5 @@ public class NBTComparisonUtil {
         current.putString(parts[parts.length - 1], WILDCARD_MARKER);
 
         return result;
-    }
-
-    public static boolean hasNbtPath(CompoundTag nbt, String path) {
-        if (nbt == null) return false;
-
-        String[] parts = path.split("\\.");
-        CompoundTag current = nbt;
-
-        for (int i = 0; i < parts.length - 1; i++) {
-            if (!(current.get(parts[i]) instanceof CompoundTag)) {
-                return false;
-            }
-            current = current.getCompoundOrEmpty(parts[i]);
-        }
-
-        return current.contains(parts[parts.length - 1]);
-    }
-
-    public static Tag getNbtByPath(CompoundTag nbt, String path) {
-        if (nbt == null) return null;
-
-        String[] parts = path.split("\\.");
-        CompoundTag current = nbt;
-
-        for (int i = 0; i < parts.length - 1; i++) {
-            if (!(current.get(parts[i]) instanceof CompoundTag)) {
-                return null;
-            }
-            current = current.getCompoundOrEmpty(parts[i]);
-        }
-
-        return current.get(parts[parts.length - 1]);
     }
 }

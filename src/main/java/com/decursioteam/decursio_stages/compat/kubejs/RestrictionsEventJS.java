@@ -36,6 +36,7 @@ public final class RestrictionsEventJS implements KubeEvent {
                 throw new IllegalArgumentException(name + ": missing Restriction Data object");
             JsonObject data = json.getAsJsonObject("Restriction Data");
             if (!data.has("stage")) throw new IllegalArgumentException(name + ": missing stage");
+            com.decursioteam.decursio_stages.datagen.RestrictionSchema.validate(json);
             data.addProperty("stage", StageBindings.normalizeStage(data.get("stage").getAsString()));
             data.remove("name");
             Restrictions.codec(name).parse(JsonOps.INSTANCE, json)

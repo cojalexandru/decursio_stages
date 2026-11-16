@@ -4,17 +4,13 @@ import com.decursioteam.decursio_stages.datagen.RestrictionsData;
 import com.decursioteam.decursio_stages.restrictions.DimensionRestriction;
 import com.decursioteam.decursio_stages.restrictions.FluidRestriction;
 import com.decursioteam.decursio_stages.restrictions.ItemExclusion;
-import com.decursioteam.decursio_stages.restrictions.ItemRestriction;
 import com.google.gson.JsonObject;
-import net.minecraft.nbt.CompoundTag;
 import net.minecraft.resources.Identifier;
 import net.minecraft.world.item.Item;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.material.Fluid;
 import net.minecraft.core.registries.BuiltInRegistries;
 
-import java.util.HashSet;
-import java.util.Optional;
 import java.util.Set;
 
 public class ResourceUtil {
@@ -52,20 +48,8 @@ public class ResourceUtil {
     }
 
     /** Read-only collection views, rebuilt together with the restriction registry. */
-    public static Set<ItemRestriction> getItems(String restriction) {
-        return RestrictionsData.getRegistry().compiled(restriction).items;
-    }
-
-    public static Set<Identifier> getTags(String restriction) {
-        return RestrictionsData.getRegistry().compiled(restriction).tags;
-    }
-
     public static Set<String> getMods(String restriction) {
         return RestrictionsData.getRegistry().compiled(restriction).mods;
-    }
-
-    public static HashSet<FluidRestriction> getFluids(String restriction) {
-        return new HashSet<>(RestrictionsData.getRestrictionData(restriction).getData().getFluidList());
     }
 
     public static Set<ItemExclusion> getExceptions(String restriction) {
@@ -106,46 +90,6 @@ public class ResourceUtil {
         }
 
         return json;
-    }
-
-    public static ItemStack jsonToItemStack(JsonObject json) {
-        if (!json.has("item")) {
-            return ItemStack.EMPTY;
-        }
-
-        Item item = BuiltInRegistries.ITEM.getValue(Identifier.parse(json.get("item").getAsString()));
-        if (item == null) {
-            return ItemStack.EMPTY;
-        }
-
-        ItemStack stack = new ItemStack(item);
-
-        if (json.has("nbt")) {
-            CompoundTag nbt = NBTComparisonUtil.jsonToNbt(json.get("nbt"));
-            if (nbt != null) {
-                ItemDataUtil.apply(stack, nbt);
-            }
-        }
-
-        return stack;
-    }
-
-    public static ItemRestriction createWildcardRestriction(ItemStack base, String nbtPath) {
-        if (base.isEmpty()) {
-            return null;
-        }
-
-        if (!ItemDataUtil.has(base) || "*".equals(nbtPath)) {
-            return new ItemRestriction(getRegistryName(base.getItem()), Optional.empty());
-        }
-
-        CompoundTag nbtCopy = ItemDataUtil.get(base).copy();
-
-        if (!"*".equals(nbtPath)) {
-            nbtCopy = NBTComparisonUtil.createNbtWithWildcard(nbtCopy, nbtPath);
-        }
-
-        return new ItemRestriction(getRegistryName(base.getItem()), Optional.ofNullable(nbtCopy));
     }
 
     public enum CHECK_TYPES {

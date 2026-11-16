@@ -8,6 +8,7 @@ import net.minecraft.nbt.StringTag;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.Set;
+import java.util.Locale;
 
 public class StagesData implements IStagesData {
 
@@ -23,19 +24,19 @@ public class StagesData implements IStagesData {
     @Override
     public boolean hasStage (String stage) {
 
-        return this.unlockedStages.contains(stage.toLowerCase());
+        return this.unlockedStages.contains(stage.toLowerCase(Locale.ROOT));
     }
 
     @Override
     public void addStage (String stage) {
 
-        this.unlockedStages.add(stage.toLowerCase());
+        this.unlockedStages.add(stage.toLowerCase(Locale.ROOT));
     }
 
     @Override
     public void removeStage (String stage) {
 
-        this.unlockedStages.remove(stage.toLowerCase());
+        this.unlockedStages.remove(stage.toLowerCase(Locale.ROOT));
     }
 
     @Override
@@ -46,7 +47,10 @@ public class StagesData implements IStagesData {
 
     @Override
     public void readFromNBT (CompoundTag tag) {
+        try { com.decursioteam.decursio_stages.persistence.StageFileStore.validate(tag); }
+        catch (java.io.IOException error) { throw new IllegalArgumentException(error.getMessage(), error); }
         final ListTag list = tag.getListOrEmpty(stagesTag);
+        this.unlockedStages.clear();
         for (int tagIndex = 0; tagIndex < list.size(); tagIndex++) {
             this.addStage(list.getStringOr(tagIndex, ""));
         }
@@ -56,7 +60,7 @@ public class StagesData implements IStagesData {
     public CompoundTag writeToNBT () {
         final CompoundTag tag = new CompoundTag();
         final ListTag list = new ListTag();
-        for (final String stage : this.unlockedStages) {
+        for (final String stage : this.unlockedStages.stream().sorted().toList()) {
             list.add(StringTag.valueOf(stage));
         }
         tag.put(stagesTag, list);

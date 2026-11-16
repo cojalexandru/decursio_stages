@@ -21,7 +21,7 @@ public class DecursioStages {
 
     public static final Logger LOGGER = LogManager.getLogger();
     public static final String MOD_ID = "decursio_stages";
-    public static final NetworkUtil NETWORK = new NetworkUtil("decursio_stages:main", "8.0.x");
+    public static final NetworkUtil NETWORK = new NetworkUtil("8.4.x");
 
     public DecursioStages(IEventBus modBus, ModContainer container) {
         container.registerConfig(ModConfig.Type.COMMON, CommonConfig.config, "decursio_stages/decursio_stages.toml");

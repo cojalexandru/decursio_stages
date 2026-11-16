@@ -55,7 +55,7 @@ import static com.decursioteam.decursio_stages.client.screens.RestrictionEditorT
 
 public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEditorMenu> {
     private static final int W = 420, H = 250;
-    private static final int LIST_ROW = 12, LIST_ROWS = 15;
+    private static final int LIST_ROW = 12, LIST_ROWS = 14;
     private static final int GRID_COLS = 9, GRID_ROWS = 3, CELL = 18;
     private static final int MAX_PACKET = 32000;
 
@@ -88,10 +88,17 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     private String tooltipMode = "ALWAYS";
     private boolean showExceptions;
     private boolean dirty;
+    private final DraftHistory history = new DraftHistory();
+    private JsonObject savedDraft;
+    private final List<EditorValidation> validation = new ArrayList<>();
+    private Button duplicateButton, undoButton, redoButton, addButton;
     private List<String> structureIds = List.of();
 
     List<String> structureIds() { return structureIds; }
 
+    private List<String> recipeIds = List.of();
+    public List<String> recipeIds() { return recipeIds; }
+    private String serverVersion, draftVersion;
     private boolean loading;
     private boolean awaitingServer;
     private boolean initialized;
@@ -108,6 +115,8 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
 
     public RestrictEditorScreen(OpenRestrictEditorMessage message) {
         super(new RestrictionEditorMenu(), Minecraft.getInstance().player.getInventory(), Component.translatable("decursio_stages.gui.editor.title"), W, H);
+        this.recipeIds = message.getRecipeIds();
+        this.serverVersion = message.getVersion();
         this.restrictions = message.getRestrictions();
         this.structureIds = message.getStructureIds();
         this.pendingSelect = message.getSelect();
@@ -122,6 +131,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     @Override
     protected void init() {
         super.init();
+        validation.clear();
         left = Math.max(4, (width - W - 100) / 2);
         top = Math.max(4, (height - H - 14) / 2);
         leftPos = left;
@@ -146,13 +156,18 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
                 .bounds(left + 6, top + 228, 110, 16)
                 .tooltip(Tooltip.create(Component.translatable("decursio_stages.gui.editor.new.tooltip"))).build());
 
+        duplicateButton = addRenderableWidget(Button.builder(Component.translatable("decursio_stages.gui.editor.copy"), b -> duplicateRestriction())
+                .bounds(left + 6, top + 208, 38, 16).tooltip(Tooltip.create(Component.translatable("decursio_stages.gui.editor.copy.tooltip"))).build());
+        undoButton = addRenderableWidget(Button.builder(Component.translatable("decursio_stages.gui.editor.undo"), b -> undo(false))
+                .bounds(left + 46, top + 208, 34, 16).tooltip(Tooltip.create(Component.translatable("decursio_stages.gui.editor.undo.tooltip"))).build());
+        redoButton = addRenderableWidget(Button.builder(Component.translatable("decursio_stages.gui.editor.redo"), b -> undo(true))
+                .bounds(left + 82, top + 208, 34, 16).tooltip(Tooltip.create(Component.translatable("decursio_stages.gui.editor.redo.tooltip"))).build());
+
         // Centre column: fields
         int cx = left + 122;
         nameBox = addRenderableWidget(field(cx + 34, top + 18, 136, name, 64, "name"));
-        nameBox.setFilter(s -> s.matches("[a-z0-9_\\-]*"));
         stageBox = addRenderableWidget(field(cx + 34, top + 36, 66, stage, 64, "stage"));
-        delayBox = addRenderableWidget(field(cx + 134, top + 36, 36, delay, 6, "delay"));
-        delayBox.setFilter(s -> s.matches("\\d*"));
+        delayBox = addRenderableWidget(field(cx + 134, top + 36, 36, delay, 11, "delay"));
         titleBox = addRenderableWidget(field(cx + 34, top + 54, 136, title, 64, "item_title"));
 
         tabRestricted = addRenderableWidget(Button.builder(Component.empty(), b -> setTab(false))
@@ -167,7 +182,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
         addBox.setHint(Component.translatable("decursio_stages.gui.editor.add.hint").withStyle(ChatFormatting.DARK_GRAY));
         addBox.setTooltip(Tooltip.create(Component.translatable("decursio_stages.gui.editor.add.tooltip")));
         addBox.setValue(add);
-        addRenderableWidget(Button.builder(Component.literal("+"), b -> addFromField())
+        addButton = addRenderableWidget(Button.builder(Component.literal("+"), b -> addFromField())
                 .bounds(cx + 146, top + 149, 24, 14).build());
 
         // Right column: settings
@@ -188,6 +203,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
 
         addRenderableWidget(Button.builder(Component.literal("Advanced..."), b -> {
             if (awaitingServer) return;
+            history.endGroup();
             minecraft.setScreen(new AdvancedRestrictionScreen(this, obj(working, "Restriction Data"), updates -> {
                 JsonObject data = obj(working, "Restriction Data");
                 working.add("Restriction Data", data);
@@ -202,6 +218,10 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
                 .bounds(rx + 60, top + 228, 56, 16)
                 .tooltip(Tooltip.create(Component.translatable("decursio_stages.gui.editor.save.tooltip"))).build());
 
+        bindValidation(nameBox, "name", () -> nameError());
+        bindValidation(stageBox, "stage", () -> stageBox.getValue().isBlank() ? Component.translatable("decursio_stages.gui.editor.status.no_stage").getString() : null);
+        bindValidation(delayBox, "delay", () -> delayError());
+        bindValidation(addBox, "add", () -> entryError());
         refilter();
         if (!initialized) {
             initialized = true;
@@ -217,7 +237,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
         box.setMaxLength(maxLength);
         box.setValue(value);
         box.setTooltip(Tooltip.create(Component.translatable("decursio_stages.gui.editor." + key + ".tooltip")));
-        box.setResponder(s -> markDirty());
+        box.setResponder(s -> markDirty("field:" + key));
         return box;
     }
 
@@ -229,6 +249,8 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     public void applyServerUpdate(OpenRestrictEditorMessage message) {
         structureIds = message.getStructureIds();
         awaitingServer = false;
+        recipeIds = message.getRecipeIds();
+        serverVersion = message.getVersion();
         restrictions = message.getRestrictions();
         refilter();
         boolean error = message.isError();
@@ -243,6 +265,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     }
 
     private void load(String id) {
+        draftVersion = serverVersion;
         JsonObject json = restrictions.get(id);
         if (json == null) return;
         loading = true;
@@ -280,10 +303,13 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
         gridScroll = 0;
         dirty = false;
         pendingConfirm = null;
+        savedDraft = snapshot();
+        history.reset(savedDraft);
         refreshLabels();
     }
 
     private void loadBlank() {
+        draftVersion = serverVersion;
         loading = true;
         selected = null;
         working = new JsonObject();
@@ -302,6 +328,8 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
         gridScroll = 0;
         dirty = false;
         pendingConfirm = null;
+        savedDraft = snapshot();
+        history.reset(savedDraft);
         refreshLabels();
     }
 
@@ -368,26 +396,20 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
             return;
         }
         if (!confirm("delete", Component.translatable("decursio_stages.gui.editor.confirm.delete", selected))) return;
-        send(new EditRestrictionMessage(EditRestrictionMessage.Action.DELETE, selected, selected, "{}"));
+        send(new EditRestrictionMessage(EditRestrictionMessage.Action.DELETE, selected, selected, "{}", draftVersion));
     }
 
     private void save() {
+        if (awaitingServer) return;
+        refreshLabels();
+        String error = firstMainError();
+        if (error != null) {
+            setStatus(Component.literal(error), C_ERR);
+            setFocused(nameError() != null ? nameBox : stageBox.getValue().isBlank() ? stageBox : delayBox);
+            return;
+        }
         String name = nameBox.getValue().trim();
-        if (!RestrictionEditorServer.VALID_NAME.matcher(name).matches()) {
-            setStatus(Component.translatable("decursio_stages.gui.editor.status.invalid_name"), C_ERR);
-            setFocused(nameBox);
-            return;
-        }
-        if (stageBox.getValue().isBlank()) {
-            setStatus(Component.translatable("decursio_stages.gui.editor.status.no_stage"), C_ERR);
-            setFocused(stageBox);
-            return;
-        }
-        if (!name.equals(selected) && restrictions.containsKey(name)) {
-            setStatus(Component.translatable("decursio_stages.gui.editor.status.exists", name), C_ERR);
-            return;
-        }
-        send(new EditRestrictionMessage(EditRestrictionMessage.Action.SAVE, name, selected == null ? "" : selected, buildJson().toString()));
+        send(new EditRestrictionMessage(EditRestrictionMessage.Action.SAVE, name, selected == null ? "" : selected, buildJson().toString(), draftVersion));
     }
 
     private void send(EditRestrictionMessage message) {
@@ -397,12 +419,14 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
             return;
         }
         awaitingServer = true;
+        refreshLabels();
         pendingConfirm = null;
         setStatus(Component.translatable("decursio_stages.gui.editor.status.saving"), C_MUTED);
         DecursioStages.NETWORK.sendToServer(message);
     }
 
     private void setTab(boolean exceptionsTab) {
+        history.endGroup();
         showExceptions = exceptionsTab;
         gridScroll = 0;
         refreshLabels();
@@ -528,10 +552,126 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
         return showExceptions ? exceptions : restricted;
     }
 
+    private JsonObject snapshot() {
+        JsonObject state = new JsonObject();
+        state.add("json", buildJson());
+        if (selected != null) state.addProperty("selected", selected);
+        state.addProperty("name", nameBox.getValue()); state.addProperty("stage", stageBox.getValue());
+        state.addProperty("title", titleBox.getValue()); state.addProperty("delay", delayBox.getValue());
+        JsonArray items = new JsonArray(), excluded = new JsonArray();
+        restricted.forEach(entry -> items.add(entry.toObject().deepCopy()));
+        exceptions.forEach(entry -> excluded.add(entry.toObject().deepCopy()));
+        state.add("restricted", items); state.add("exceptions", excluded);
+        return state;
+    }
+
+    private void restore(JsonObject state) {
+        loading = true;
+        try {
+            working = state.getAsJsonObject("json").deepCopy();
+            selected = state.has("selected") ? state.get("selected").getAsString() : null;
+            nameBox.setValue(state.get("name").getAsString()); stageBox.setValue(state.get("stage").getAsString());
+            titleBox.setValue(state.get("title").getAsString()); delayBox.setValue(state.get("delay").getAsString());
+            restricted.clear(); exceptions.clear();
+            state.getAsJsonArray("restricted").forEach(value -> addIfValid(restricted, Entry.fromObject(value.getAsJsonObject())));
+            state.getAsJsonArray("exceptions").forEach(value -> addIfValid(exceptions, Entry.fromObject(value.getAsJsonObject())));
+            var settings = obj(working, "Settings");
+            for (int i = 0; i < SETTINGS.size(); i++) {
+                settingValues[i] = settings.has(SETTINGS.get(i).key()) ? settings.get(SETTINGS.get(i).key()).getAsBoolean() : SETTINGS.get(i).def();
+                toggles.get(i).value = settingValues[i];
+            }
+            tooltipMode = str(settings, "advancedTooltips", "ALWAYS");
+            dirty = !state.equals(savedDraft); pendingConfirm = null;
+            gridScroll = Math.min(gridScroll, maxGridScroll());
+        } finally { loading = false; }
+        refreshLabels();
+    }
+
+    private void undo(boolean redo) {
+        if (awaitingServer || (redo ? !history.canRedo() : !history.canUndo())) return;
+        restore(redo ? history.redo() : history.undo());
+    }
+
+    private void duplicateRestriction() {
+        if (awaitingServer) return;
+        String base = nameBox.getValue().trim().toLowerCase(Locale.ROOT).replaceAll("[^a-z0-9_\\-]", "_");
+        if (base.isBlank()) base = "restriction";
+        String candidate; int number = 1;
+        do {
+            String suffix = number == 1 ? "_copy" : "_copy" + number;
+            candidate = base.substring(0, Math.min(base.length(), 64 - suffix.length())) + suffix;
+            number++;
+        } while (restrictions.containsKey(candidate));
+        loading = true;
+        try { selected = null; working = working.deepCopy(); nameBox.setValue(candidate); }
+        finally { loading = false; }
+        markDirty(); setFocused(nameBox);
+        setStatus(Component.translatable("decursio_stages.gui.editor.status.copied"), C_OK);
+    }
+
+    private void duplicateEntry(int index) {
+        var list = currentList();
+        Entry entry = Entry.fromObject(list.get(index).toObject().deepCopy());
+        if (entry == null) return;
+        list.add(index + 1, entry); markDirty();
+        setStatus(Component.translatable("decursio_stages.gui.editor.status.entry_copied"), C_OK);
+    }
+
+    private void bindValidation(EditBox box, String key, java.util.function.Supplier<String> check) {
+        validation.add(new EditorValidation(box.getX(), box.getY(), box.getWidth(), box.getHeight(), box,
+                Component.translatable("decursio_stages.gui.editor." + key + ".tooltip"),
+                box == addBox ? Component.translatable("decursio_stages.gui.editor.add.hint").withStyle(ChatFormatting.DARK_GRAY) : null, check, false));
+    }
+
+    private String nameError() {
+        String name = nameBox.getValue().trim();
+        if (!RestrictionEditorServer.VALID_NAME.matcher(name).matches())
+            return Component.translatable("decursio_stages.gui.editor.status.invalid_name").getString();
+        if (!name.equals(selected) && restrictions.containsKey(name))
+            return Component.translatable("decursio_stages.gui.editor.status.exists", name).getString();
+        return null;
+    }
+
+    private String delayError() {
+        try { if (Integer.parseInt(delayBox.getValue()) >= 0) return null; }
+        catch (NumberFormatException ignored) { }
+        return Component.translatable("decursio_stages.gui.editor.validation.delay").getString();
+    }
+
+    private String firstMainError() {
+        if (nameError() != null) return nameError();
+        if (stageBox.getValue().isBlank()) return Component.translatable("decursio_stages.gui.editor.status.no_stage").getString();
+        return delayError();
+    }
+
+    private String entryError() {
+        String raw = addBox.getValue().trim();
+        if (raw.isEmpty()) return null;
+        if (raw.startsWith("@")) return ModList.get().isLoaded(raw.substring(1).toLowerCase(Locale.ROOT)) ? null
+                : Component.translatable("decursio_stages.gui.editor.status.unknown_mod", raw.substring(1)).getString();
+        if (raw.startsWith("fluidMod:")) return ModList.get().isLoaded(raw.substring(9)) ? null
+                : Component.translatable("decursio_stages.gui.editor.status.unknown_mod", raw.substring(9)).getString();
+        String text = raw.startsWith("#") ? raw.substring(1) : raw.startsWith("fluidTag:") ? raw.substring(9)
+                : raw.startsWith("fluid:") ? raw.substring(6) : raw;
+        Identifier id = Identifier.tryParse(text);
+        if (id == null) return Component.translatable("decursio_stages.gui.editor.status.bad_id", raw).getString();
+        if (raw.startsWith("#") || raw.startsWith("fluidTag:")) return null;
+        boolean exists = raw.startsWith("fluid:") ? BuiltInRegistries.FLUID.containsKey(id) : BuiltInRegistries.ITEM.containsKey(id);
+        return exists ? null : Component.translatable("decursio_stages.gui.editor.status.bad_id", raw).getString();
+    }
+
     private void markDirty() {
         if (loading) return;
-        dirty = true;
+        markDirty(null);
+    }
+
+    private void markDirty(String group) {
+        if (loading) return;
+        JsonObject current = snapshot();
+        history.record(current, group);
+        dirty = !current.equals(savedDraft);
         pendingConfirm = null;
+        refreshLabels();
     }
 
     /** Two-click confirmation for destructive actions. Returns true on the second click. */
@@ -569,7 +709,14 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
         tabExceptions.active = !showExceptions;
         tooltipButton.setMessage(Component.translatable("decursio_stages.gui.editor.setting.advancedTooltips",
                 Component.translatable("decursio_stages.gui.editor.tooltip_mode." + tooltipMode.toLowerCase(Locale.ROOT))));
-        deleteButton.active = selected != null;
+        validation.forEach(EditorValidation::refresh);
+        saveButton.active = !awaitingServer && nameError() == null && !stageBox.getValue().isBlank() && delayError() == null;
+        duplicateButton.active = !awaitingServer;
+        undoButton.active = !awaitingServer && history.canUndo();
+        redoButton.active = !awaitingServer && history.canRedo();
+        addButton.active = !awaitingServer && !addBox.getValue().isBlank() && entryError() == null;
+        for (EditBox box : List.of(nameBox, stageBox, titleBox, delayBox, addBox)) box.setEditable(!awaitingServer);
+        deleteButton.active = selected != null && !awaitingServer;
         deleteButton.setMessage("delete".equals(pendingConfirm)
                 ? Component.translatable("decursio_stages.gui.editor.delete.confirm").withStyle(ChatFormatting.RED)
                 : Component.translatable("decursio_stages.gui.editor.delete"));
@@ -581,6 +728,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
 
     @Override
     public boolean mouseClicked(net.minecraft.client.input.MouseButtonEvent event, boolean doubleClick) {
+        if (awaitingServer) return true;
         double mx = event.x(), my = event.y();
         int button = event.button();
         // Dispatch only to widgets: vanilla container clicks must never reach the server.
@@ -595,10 +743,11 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
             setFocused(null);
             return true;
         }
-        // Entry grid: click removes
+        // Left-click removes; right-click duplicates a ghost entry.
         int gridIndex = gridIndexAt(mx, my);
         if (gridIndex >= 0 && gridIndex < currentList().size()) {
-            removeEntry(gridIndex);
+            if (button == 1) duplicateEntry(gridIndex);
+            else if (button == 0) removeEntry(gridIndex);
             setFocused(null);
             return true;
         }
@@ -630,7 +779,12 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
 
     @Override
     public boolean keyPressed(net.minecraft.client.input.KeyEvent event) {
+        if (awaitingServer) return true;
         int key = event.key();
+        if (minecraft.hasControlDown() && (key == GLFW.GLFW_KEY_Z || key == GLFW.GLFW_KEY_Y)) {
+            undo(key == GLFW.GLFW_KEY_Y || minecraft.hasShiftDown()); return true;
+        }
+        if (key == GLFW.GLFW_KEY_D && minecraft.hasControlDown()) { duplicateRestriction(); return true; }
         if (key == GLFW.GLFW_KEY_S && minecraft.hasControlDown()) { save(); return true; }
         if ((key == GLFW.GLFW_KEY_ENTER || key == GLFW.GLFW_KEY_KP_ENTER) && getFocused() == addBox) { addFromField(); return true; }
         if (getFocused() != null && getFocused().keyPressed(event)) return true;
@@ -647,7 +801,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
     @Override
     protected void containerTick() {
 
-        saveButton.active = !awaitingServer;
+        refreshLabels();
     }
 
     @Override
@@ -684,8 +838,12 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
         renderInventory(g, mx, my);
 
         super.extractRenderState(g, mx, my, partialTick);
-
-        if (status != null) {
+        validation.forEach(marker -> marker.render(g, font));
+        String focusedError = null;
+        for (var marker : validation) if (getFocused() == marker.input && marker.error != null) focusedError = marker.error;
+        if (focusedError != null) {
+            g.centeredText(font, font.plainSubstrByWidth(focusedError, W), left + W / 2, top + H + 4, C_ERR);
+        } else if (status != null) {
             g.centeredText(font, status, left + W / 2, top + H + 4, statusColor);
         }
         renderHoverTooltips(g, mx, my);
@@ -703,10 +861,10 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
             String id = filtered.get(index);
             int ry = y + row * LIST_ROW;
             boolean isSelected = id.equals(selected);
-            if (isSelected) g.fill(x, ry, x + w - 4, ry + LIST_ROW, 0x557F6BFF);
-            else if (index == hovered) g.fill(x, ry, x + w - 4, ry + LIST_ROW, 0x30FFFFFF);
+            if (isSelected) g.fill(x, ry, x + w - 4, ry + LIST_ROW, C_ROW_SELECTED);
+            else if (index == hovered) g.fill(x, ry, x + w - 4, ry + LIST_ROW, C_ROW_HOVER);
             String label = font.plainSubstrByWidth(id + (isSelected && dirty ? " *" : ""), w - 8);
-            g.text(font, label, x + 2, ry + 2, isSelected ? 0xFFFFFFFF : C_TEXT, false);
+            g.text(font, label, x + 2, ry + 2, isSelected ? C_WHITE : C_TEXT, false);
         }
         drawScrollbar(g, x + w - 3, y, LIST_ROWS * LIST_ROW, listScroll, filtered.size(), LIST_ROWS);
     }
@@ -720,7 +878,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
                 int index = (gridScroll + row) * GRID_COLS + col;
                 int sx = x + col * CELL, sy = y + row * CELL;
                 boolean has = index < list.size();
-                g.fill(sx, sy, sx + CELL - 1, sy + CELL - 1, has && index == hovered ? 0xFF6A3A3A : C_SLOT);
+                g.fill(sx, sy, sx + CELL - 1, sy + CELL - 1, has && index == hovered ? C_REMOVE_HOVER : C_SLOT);
                 if (has) {
                     Entry e = list.get(index);
                     g.item(e.icon, sx + 1, sy + 1);
@@ -816,7 +974,7 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
 
     private void drawScrollbar(GuiGraphicsExtractor g, int x, int y, int h, int scroll, int total, int visible) {
         if (total <= visible) return;
-        g.fill(x, y, x + 2, y + h, 0xFF2A2A33);
+        g.fill(x, y, x + 2, y + h, C_TRACK);
         int thumb = Math.max(8, h * visible / total);
         int ty = y + (h - thumb) * scroll / Math.max(1, total - visible);
         g.fill(x, ty, x + 2, ty + thumb, C_ACCENT);
@@ -1033,11 +1191,11 @@ public class RestrictEditorScreen extends AbstractContainerScreen<RestrictionEdi
         protected void extractContents(GuiGraphicsExtractor g, int mx, int my, float partialTick) {
             var font = Minecraft.getInstance().font;
             int x = getX(), y = getY();
-            if (isHoveredOrFocused()) g.fill(x, y, x + width, y + height, 0x22FFFFFF);
+            if (isHoveredOrFocused()) g.fill(x, y, x + width, y + height, C_TOGGLE_HOVER);
             int bx = x + 2, by = y + (height - 10) / 2;
-            g.fill(bx, by, bx + 10, by + 10, value ? 0xFF3FA557 : 0xFF5A5A66);
-            g.fill(bx + 1, by + 1, bx + 9, by + 9, value ? 0xFF5CD67A : 0xFF24242C);
-            if (value) g.fill(bx + 3, by + 3, bx + 7, by + 7, 0xFFFFFFFF);
+            g.fill(bx, by, bx + 10, by + 10, value ? C_TOGGLE_ON_BORDER : C_TOGGLE_OFF_BORDER);
+            g.fill(bx + 1, by + 1, bx + 9, by + 9, value ? C_OK : C_TOGGLE_OFF_FILL);
+            if (value) g.fill(bx + 3, by + 3, bx + 7, by + 7, C_WHITE);
             String label = font.plainSubstrByWidth(getMessage().getString(), width - 18);
             g.text(font, label, bx + 14, y + (height - 8) / 2, value ? C_TEXT : C_MUTED, false);
         }

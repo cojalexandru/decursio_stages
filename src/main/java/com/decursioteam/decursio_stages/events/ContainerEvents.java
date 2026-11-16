@@ -1,46 +1,59 @@
 package com.decursioteam.decursio_stages.events;
 
-import com.decursioteam.decursio_stages.Registry;
 import com.decursioteam.decursio_stages.config.CommonConfig;
 import com.decursioteam.decursio_stages.datagen.RestrictionsData;
+import com.decursioteam.decursio_stages.utils.CompiledRestriction;
 import com.decursioteam.decursio_stages.utils.ResourceUtil;
 import net.minecraft.network.chat.Component;
 import net.minecraft.server.level.ServerPlayer;
+import net.minecraft.world.entity.EquipmentSlot;
 import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.neoforged.neoforge.common.util.FakePlayer;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
-import net.neoforged.neoforge.event.entity.living.LivingEquipmentChangeEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.util.FakePlayer;
+import net.neoforged.neoforge.event.entity.living.LivingEquipmentChangeEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerContainerEvent;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
+import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.Map;
 import java.util.List;
-import java.util.UUID;
 import java.util.Locale;
+import java.util.Map;
+import java.util.UUID;
 
-import static com.decursioteam.decursio_stages.utils.ResourceUtil.*;
 import static com.decursioteam.decursio_stages.utils.StageUtil.hasStage;
 import static com.decursioteam.decursio_stages.utils.Utils.dropItemStack;
 
 public class ContainerEvents {
+    private static final EquipmentSlot[] ARMOR_SLOTS = {
+            EquipmentSlot.HEAD, EquipmentSlot.CHEST, EquipmentSlot.LEGS, EquipmentSlot.FEET
+    };
     private final Map<UUID, InventorySnapshot> inventories = new HashMap<>();
 
     @SubscribeEvent
-    public void logout(net.neoforged.neoforge.event.entity.player.PlayerEvent.PlayerLoggedOutEvent event) {
+    public void logout(PlayerEvent.PlayerLoggedOutEvent event) {
         inventories.remove(event.getEntity().getUUID());
     }
 
     @SubscribeEvent
-    public void stopped(net.neoforged.neoforge.event.server.ServerStoppedEvent event) { inventories.clear(); }
+    public void stopped(ServerStoppedEvent event) {
+        inventories.clear();
+    }
 
     private record InventorySnapshot(List<ItemStack> items, List<ItemStack> crafting, List<String> active, long revision) {
-        static List<ItemStack> copy(List<ItemStack> stacks) { return stacks.stream().map(ItemStack::copy).toList(); }
+        static List<ItemStack> copy(List<ItemStack> stacks) {
+            return stacks.stream().map(ItemStack::copy).toList();
+        }
+
         static boolean matches(List<ItemStack> before, List<ItemStack> now) {
             if (before.size() != now.size()) return false;
-            for (int i = 0; i < before.size(); i++) if (!ItemStack.matches(before.get(i), now.get(i))) return false;
+            for (int i = 0; i < before.size(); i++) {
+                if (!ItemStack.matches(before.get(i), now.get(i))) return false;
+            }
             return true;
         }
     }
@@ -48,33 +61,28 @@ public class ContainerEvents {
     @SubscribeEvent
     public void playerContainerOpenEvent(PlayerContainerEvent.Open event) {
         String containerName = event.getContainer().getClass().getName();
-        if (Boolean.TRUE.equals(CommonConfig.debugMode.get()))
+        if (Boolean.TRUE.equals(CommonConfig.debugMode.get())) {
             event.getEntity().sendSystemMessage(Component.literal(containerName));
+        }
 
-        if (event.getEntity() instanceof ServerPlayer player) {
-            Registry.getRestrictions().forEach(restriction-> {
-                if(!getApplyToFakePlayer(restriction) && player instanceof FakePlayer) return;
+        if (!(event.getEntity() instanceof ServerPlayer player)) return;
 
-                String stage = RestrictionsData.getRestrictionData(restriction).getData().getStage().toLowerCase(Locale.ROOT);
-                if (!hasStage(player, stage)) {
+        var registry = RestrictionsData.getRegistry();
+        registry.getRestrictions().forEach((name, restriction) -> {
+            if (!restriction.getSettingsCodec().getApplyToFakePlayers() && player instanceof FakePlayer) return;
 
-                    if (!RestrictionsData.getRestrictionData(restriction).getSettingsCodec().getContainerListWhitelist() && getContainers(restriction).contains(containerName)) {
-                        for (ItemStack item : event.getEntity().inventoryMenu.getItems()) {
-                            if (check(restriction, item, ResourceUtil.CHECK_TYPES.ALL)) {
-                                dropItemStack(player, item);
-                            }
-                        }
-                    }
-                    if (RestrictionsData.getRestrictionData(restriction).getSettingsCodec().getContainerListWhitelist() && !getContainers(restriction).contains(containerName)) {
-                        for (ItemStack item : event.getEntity().inventoryMenu.getItems()) {
-                            if (check(restriction, item, ResourceUtil.CHECK_TYPES.ALL)) {
-                                dropItemStack(player, item);
-                            }
-                        }
+            String stage = restriction.getData().getStage().toLowerCase(Locale.ROOT);
+            if (hasStage(player, stage)) return;
+
+            CompiledRestriction compiled = registry.compiled(name);
+            if (restriction.getSettingsCodec().getContainerListWhitelist() != compiled.containers.contains(containerName)) {
+                for (ItemStack item : player.inventoryMenu.getItems()) {
+                    if (compiled.matches(item, ResourceUtil.CHECK_TYPES.ALL)) {
+                        dropItemStack(player, item);
                     }
                 }
-            });
-        }
+            }
+        });
     }
 
     @SubscribeEvent(priority = EventPriority.LOW)
@@ -90,19 +98,20 @@ public class ContainerEvents {
                 .map(Map.Entry::getKey).toList();
         var items = player.getInventory().getNonEquipmentItems();
         var crafting = player.inventoryMenu.getCraftSlots();
-        List<ItemStack> craftingItems = new java.util.ArrayList<>();
+        List<ItemStack> craftingItems = new ArrayList<>();
         for (int i = 0; i < crafting.getContainerSize(); i++) craftingItems.add(crafting.getItem(i));
         var previous = inventories.get(player.getUUID());
         if (previous != null && previous.revision == registry.revision() && previous.active.equals(active)
                 && InventorySnapshot.matches(previous.items, items) && InventorySnapshot.matches(previous.crafting, craftingItems)) return;
 
-        for (String restriction : active) {
-            var settings = RestrictionsData.getRestrictionData(restriction).getSettingsCodec();
-            boolean listed = getContainers(restriction).contains("decursio_stages.inventoryMenu.CraftingGrid");
+        for (String name : active) {
+            var settings = registry.getRestrictions().get(name).getSettingsCodec();
+            CompiledRestriction compiled = registry.compiled(name);
+            boolean listed = compiled.containers.contains("decursio_stages.inventoryMenu.CraftingGrid");
             if (settings.getContainerListWhitelist() != listed) {
                 boolean changed = false;
                 for (int i = 0; i < crafting.getContainerSize(); i++) {
-                    if (check(restriction, crafting.getItem(i), ResourceUtil.CHECK_TYPES.ALL)) {
+                    if (compiled.matches(crafting.getItem(i), ResourceUtil.CHECK_TYPES.ALL)) {
                         dropItemStack(player, crafting.getItem(i));
                         changed = true;
                     }
@@ -111,7 +120,7 @@ public class ContainerEvents {
             }
             if (settings.getCheckPlayerInventory()) {
                 for (ItemStack item : items) {
-                    if (check(restriction, item, ResourceUtil.CHECK_TYPES.ALL)) dropItemStack(player, item);
+                    if (compiled.matches(item, ResourceUtil.CHECK_TYPES.ALL)) dropItemStack(player, item);
                 }
             }
         }
@@ -123,20 +132,23 @@ public class ContainerEvents {
 
     @SubscribeEvent
     public void onEquipmentChange(LivingEquipmentChangeEvent event) {
-        if (event.getEntity().level().isClientSide()) return;
-        if (event.getEntity() instanceof Player player) {
-            Registry.getRestrictions().forEach(restriction -> {
-                if(!getApplyToFakePlayer(restriction) && player instanceof FakePlayer) return;
+        if (event.getEntity().level().isClientSide() || !(event.getEntity() instanceof Player player)) return;
 
-                String stage = RestrictionsData.getRestrictionData(restriction).getData().getStage().toLowerCase(Locale.ROOT);
-                if (RestrictionsData.getRestrictionData(restriction).getSettingsCodec().getCheckPlayerEquipment() && !hasStage(player, stage)) {
-                    for (ItemStack item : java.util.List.of(player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.HEAD), player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.CHEST), player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.LEGS), player.getItemBySlot(net.minecraft.world.entity.EquipmentSlot.FEET))) {
-                        if (check(restriction, item, ResourceUtil.CHECK_TYPES.ALL)) {
-                            dropItemStack(player, item);
-                        }
+        var registry = RestrictionsData.getRegistry();
+        registry.getRestrictions().forEach((name, restriction) -> {
+            var settings = restriction.getSettingsCodec();
+            if (!settings.getApplyToFakePlayers() && player instanceof FakePlayer) return;
+
+            String stage = restriction.getData().getStage().toLowerCase(Locale.ROOT);
+            if (settings.getCheckPlayerEquipment() && !hasStage(player, stage)) {
+                CompiledRestriction compiled = registry.compiled(name);
+                for (EquipmentSlot slot : ARMOR_SLOTS) {
+                    ItemStack item = player.getItemBySlot(slot);
+                    if (compiled.matches(item, ResourceUtil.CHECK_TYPES.ALL)) {
+                        dropItemStack(player, item);
                     }
                 }
-            });
-        }
+            }
+        });
     }
 }

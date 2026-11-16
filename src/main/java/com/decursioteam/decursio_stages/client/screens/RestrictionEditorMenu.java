@@ -6,7 +6,7 @@ import net.minecraft.world.inventory.AbstractContainerMenu;
 import net.minecraft.world.inventory.Slot;
 import net.minecraft.world.item.ItemStack;
 
-/** Client-only, inert menu. The offscreen empty slot lets EMI recognize this screen. */
+/** Client-only, inert menu. The offscreen empty slot lets recipe viewers recognize this screen. */
 public final class RestrictionEditorMenu extends AbstractContainerMenu {
     public RestrictionEditorMenu() {
         super(null, -1);

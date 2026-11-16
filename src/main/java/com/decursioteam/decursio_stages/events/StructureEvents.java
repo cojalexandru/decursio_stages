@@ -1,24 +1,22 @@
 package com.decursioteam.decursio_stages.events;
 
-import com.decursioteam.decursio_stages.Registry;
 import com.decursioteam.decursio_stages.datagen.RestrictionsData;
 import net.minecraft.core.registries.Registries;
 import net.minecraft.network.chat.Component;
 import net.minecraft.resources.Identifier;
 import net.minecraft.server.level.ServerPlayer;
-import net.neoforged.neoforge.common.util.FakePlayer;
-import net.neoforged.neoforge.event.tick.PlayerTickEvent;
-import net.neoforged.neoforge.event.entity.player.PlayerEvent;
-import net.neoforged.neoforge.event.server.ServerStoppedEvent;
 import net.neoforged.bus.api.EventPriority;
 import net.neoforged.bus.api.SubscribeEvent;
+import net.neoforged.neoforge.common.util.FakePlayer;
+import net.neoforged.neoforge.event.entity.player.PlayerEvent;
+import net.neoforged.neoforge.event.server.ServerStoppedEvent;
+import net.neoforged.neoforge.event.tick.PlayerTickEvent;
 
 import java.util.HashSet;
 import java.util.Locale;
 import java.util.Set;
 import java.util.UUID;
 
-import static com.decursioteam.decursio_stages.utils.ResourceUtil.getApplyToFakePlayer;
 import static com.decursioteam.decursio_stages.utils.StageUtil.hasStage;
 
 public class StructureEvents {
@@ -42,12 +40,12 @@ public class StructureEvents {
     }
 
     private boolean isInsideAnyRestrictedStructure(ServerPlayer player) {
-        for (String name : Registry.getRestrictions()) {
-            if (player instanceof FakePlayer && !getApplyToFakePlayer(name)) continue;
-            var restriction = RestrictionsData.getRestrictionData(name).getData();
-            if (restriction.getStructureList().isEmpty()
-                    || !hasStage(player, restriction.getStage().toLowerCase(Locale.ROOT))) continue;
-            for (var entry : restriction.getStructureList()) {
+        for (var restriction : RestrictionsData.getRegistry().getRestrictions().values()) {
+            if (player instanceof FakePlayer && !restriction.getSettingsCodec().getApplyToFakePlayers()) continue;
+            var data = restriction.getData();
+            if (data.getStructureList().isEmpty()
+                    || !hasStage(player, data.getStage().toLowerCase(Locale.ROOT))) continue;
+            for (var entry : data.getStructureList()) {
                 if (isInsideStructure(player, entry.getStructure())) return true;
             }
         }

@@ -32,8 +32,6 @@ repositories {
     maven { url = 'https://maven.terraformersmc.com/releases' }
     maven { url = 'https://cursemaven.com'; content { includeGroup 'curse.maven' } }
 }
-// EMI has no published 26.1.2 API; retain its source for a future compatible release.
-sourceSets.main.java.exclude '**/DecursioStagesEMI.java'
 dependencies {
     compileOnly 'mezz.jei:jei-26.1.2-neoforge:29.53.0.115'
     compileOnly 'me.shedaniel:RoughlyEnoughItems-neoforge:26.1.819'
@@ -73,3 +71,15 @@ tasks.named('processResources', ProcessResources).configure {
     filesMatching(['META-INF/neoforge.mods.toml', 'pack.mcmeta']) { expand properties }
 }
 tasks.withType(JavaCompile).configureEach { options.encoding = 'UTF-8' }
+
+// Optional development profiles for checking block-inspection overlays.
+switch (project.findProperty('blockOverlay')) {
+    case 'jade': dependencies { runtimeOnly 'curse.maven:jade-324717:9156414' }; break
+    case 'top': dependencies { runtimeOnly 'curse.maven:the-one-probe-245211:9523577' }; break
+    case 'both': dependencies {
+        runtimeOnly 'curse.maven:jade-324717:9156414'
+        runtimeOnly 'curse.maven:the-one-probe-245211:9523577'
+    }; break
+    case null: break
+    default: throw new GradleException('blockOverlay must be jade, top or both')
+}

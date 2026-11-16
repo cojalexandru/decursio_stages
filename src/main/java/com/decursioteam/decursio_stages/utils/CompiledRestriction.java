@@ -11,7 +11,7 @@ import java.util.*;
 
 /** Immutable indices for one parsed rule. Stack contents and tag membership remain live. */
 public final class CompiledRestriction {
-    public static final CompiledRestriction EMPTY = new CompiledRestriction(new RestrictionCodec.Mutable("empty"));
+    public static final CompiledRestriction EMPTY = new CompiledRestriction(RestrictionCodec.DEFAULT);
     public final Set<ItemRestriction> items;
     public final Set<ItemExclusion> exceptions;
     public final Set<Identifier> tags;

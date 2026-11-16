@@ -10,22 +10,22 @@ import java.util.Optional;
 public class StructureRestriction {
 
     private final Identifier structure;
-    private Boolean canUseBlock;
-    private Boolean canBreakBlock;
+    private final Boolean canUseBlock;
+    private final Boolean canBreakBlock;
 
-    private Boolean canPlaceBlock;
-    private Optional<List<Identifier>> useBlockList;
-    private Optional<List<Identifier>> canPlaceBlockList;
-    private Optional<List<Identifier>> breakBlockList;
+    private final Boolean canPlaceBlock;
+    private final Optional<List<Identifier>> useBlockList;
+    private final Optional<List<Identifier>> canPlaceBlockList;
+    private final Optional<List<Identifier>> breakBlockList;
 
     public StructureRestriction(Identifier structure, Boolean canUseBlock, Boolean canPlaceBlock, Boolean canBreakBlock, Optional<List<Identifier>> useBlockList, Optional<List<Identifier>> canPlaceBlockList, Optional<List<Identifier>> breakBlockList) {
         this.structure = structure;
         this.canUseBlock = canUseBlock;
         this.canPlaceBlock = canPlaceBlock;
         this.canBreakBlock = canBreakBlock;
-        this.useBlockList = useBlockList;
-        this.canPlaceBlockList = canPlaceBlockList;
-        this.breakBlockList = breakBlockList;
+        this.useBlockList = Optional.of(List.copyOf(useBlockList.orElse(List.of())));
+        this.canPlaceBlockList = Optional.of(List.copyOf(canPlaceBlockList.orElse(List.of())));
+        this.breakBlockList = Optional.of(List.copyOf(breakBlockList.orElse(List.of())));
     }
 
     public static Codec<StructureRestriction> codec() {

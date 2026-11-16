@@ -11,51 +11,67 @@ import net.minecraft.client.gui.screens.Screen;
 import dev.architectury.fluid.FluidStack;
 import java.util.stream.Stream;
 
-import com.decursioteam.decursio_stages.Registry;
-import com.decursioteam.decursio_stages.config.CommonConfig;
-import com.decursioteam.decursio_stages.datagen.RestrictionsData;
-import com.decursioteam.decursio_stages.datagen.utils.IStagesData;
-import com.decursioteam.decursio_stages.events.SyncStagesEvent;
-import com.decursioteam.decursio_stages.utils.ResourceUtil;
-import com.decursioteam.decursio_stages.utils.StageUtil;
-import me.shedaniel.rei.api.client.entry.filtering.FilteringRuleTypeRegistry;
 import me.shedaniel.rei.api.client.entry.filtering.base.BasicFilteringRule;
 import me.shedaniel.rei.api.client.plugins.REIClientPlugin;
 import me.shedaniel.rei.api.client.registry.entry.EntryRegistry;
 import me.shedaniel.rei.api.common.entry.EntryStack;
 import me.shedaniel.rei.api.common.entry.type.VanillaEntryTypes;
 import me.shedaniel.rei.forge.REIPluginClient;
-import net.minecraft.client.Minecraft;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
-import net.minecraft.world.level.material.Fluid;
-import net.neoforged.neoforge.client.event.RecipesReceivedEvent;
-import net.neoforged.neoforge.common.NeoForge;
-import net.neoforged.bus.api.EventPriority;
-import net.neoforged.fml.util.thread.EffectiveSide;
-import net.minecraft.core.registries.BuiltInRegistries;
 
-import java.util.ArrayList;
 import java.util.List;
 
-import static com.decursioteam.decursio_stages.DecursioStages.LOGGER;
-import static com.decursioteam.decursio_stages.utils.ResourceUtil.*;
 
 @REIPluginClient
 public class DecursioStagesREI implements REIClientPlugin {
 
-    private final List<EntryStack<?>> hiddenEntries = new ArrayList<>();
+    private long recipeRevision = -1;
+    private BasicFilteringRule<?> filteringRule;
+    private final com.decursioteam.decursio_stages.client.RecipeViewerUpdates<EntryStack<?>> updates;
 
     public DecursioStagesREI() {
-        if(EffectiveSide.get().isClient()){
-            NeoForge.EVENT_BUS.addListener(EventPriority.NORMAL, false, SyncStagesEvent.class, e -> this.updateItems());
-            NeoForge.EVENT_BUS.addListener(EventPriority.LOW, false, RecipesReceivedEvent.class, e -> this.updateItems());
-        }
+        net.neoforged.neoforge.common.NeoForge.EVENT_BUS.addListener((net.neoforged.neoforge.client.event.ClientTickEvent.Post event) -> {
+            long revision = com.decursioteam.decursio_stages.client.ClientRecipeVisibility.revision();
+            if (recipeRevision == revision || EntryRegistry.getInstance().isReloading()) return;
+            recipeRevision = revision;
+            var minecraft = net.minecraft.client.Minecraft.getInstance();
+            if (minecraft.player != null && minecraft.screen instanceof me.shedaniel.rei.api.client.gui.screen.DisplayScreen screen) {
+                var context = me.shedaniel.rei.api.client.view.ViewSearchBuilder.builder();
+                screen.getResultsToNotice().forEach(context::addRecipesFor);
+                screen.getIngredientsToNotice().forEach(context::addUsagesFor);
+                if (screen.getResultsToNotice().isEmpty() && screen.getIngredientsToNotice().isEmpty()) context.addAllCategories();
+                context.setPreferredOpenedCategory(screen.getCurrentCategoryId());
+                minecraft.setScreen(me.shedaniel.rei.api.client.REIRuntime.getInstance().getPreviousScreen());
+                context.open();
+            }
+        });
+        updates = new com.decursioteam.decursio_stages.client.RecipeViewerUpdates<>(
+                () -> EntryRegistry.getInstance().getEntryStacks().toList(),
+                entry -> entry.getType() == VanillaEntryTypes.ITEM ? (ItemStack) entry.getValue() : null,
+                entry -> entry.getType() == VanillaEntryTypes.FLUID ? ((FluidStack) entry.getValue()).getFluid() : null,
+                values -> filteringRule.show(values), values -> filteringRule.hide(values), () -> filteringRule != null && !EntryRegistry.getInstance().isReloading());
+        updates.trackCatalogSize(() -> EntryRegistry.getInstance().size());
     }
 
     @Override
     public void registerBasicEntryFiltering(BasicFilteringRule<?> rule) {
-        updateItems();
+        if (filteringRule == rule) updates.catalogChanged();
+        else { filteringRule = rule; updates.runtimeChanged(); }
+    }
+
+    @Override
+    public void registerDisplays(me.shedaniel.rei.api.client.registry.display.DisplayRegistry registry) {
+        registry.registerVisibilityPredicate((category, display) -> {
+            Object origin = registry.getDisplayOrigin(display);
+            if (origin instanceof net.minecraft.world.item.crafting.display.RecipeDisplayEntry entry
+                    && com.decursioteam.decursio_stages.client.ClientRecipeVisibility.hiddenDisplay(entry.id().index()))
+                return dev.architectury.event.EventResult.interruptFalse();
+            var ids = display.provideInternalDisplayIds();
+            if (ids.isEmpty()) ids = display.getDisplayLocation().map(java.util.List::of).orElse(java.util.List.of());
+            return com.decursioteam.decursio_stages.recipes.RecipeVisibilityIndex.hidden(ids,
+                    com.decursioteam.decursio_stages.client.ClientRecipeVisibility.blocked())
+                    ? dev.architectury.event.EventResult.interruptFalse() : dev.architectury.event.EventResult.pass();
+        });
     }
 
     @Override
@@ -94,80 +110,4 @@ public class DecursioStagesREI implements REIClientPlugin {
         });
     }
 
-    private void updateItems() {
-        EntryRegistry entryRegistry = EntryRegistry.getInstance();
-        BasicFilteringRule<?> rule = FilteringRuleTypeRegistry.getInstance().basic();
-
-        collectEntries(rule);
-        collectEntries(entryRegistry);
-        hideEntries(rule);
-    }
-
-    private void collectEntries(BasicFilteringRule<?> rule) {
-        if (!this.hiddenEntries.isEmpty()) {
-            if(CommonConfig.debugMode.get()) LOGGER.info("Restoring the following items at runtime: " + this.hiddenEntries);
-            for (EntryStack<?> stack : this.hiddenEntries) {
-                rule.show(stack);
-            }
-            this.hiddenEntries.clear();
-        } else if(CommonConfig.debugMode.get()) LOGGER.warn("There are no items available for restoring to the REI ingredient list!");
-    }
-
-    private void collectEntries(EntryRegistry registry) {
-        registry.getEntryStacks().forEach(entryStack -> {
-            final Player player = Minecraft.getInstance().player;
-            final IStagesData stageData = StageUtil.getPlayerData(player);
-            try {
-                Registry.getRestrictionsHashSet().forEach((restriction) -> {
-                    String stage = RestrictionsData.getRestrictionData(restriction).getData().getStage();
-                    assert stageData != null;
-                    if (!stageData.hasStage(stage) && RestrictionsData.getRestrictionData(restriction).getSettingsCodec().getHideInJEI()) {
-                        if (entryStack.getType() == VanillaEntryTypes.FLUID) {
-                            Fluid fluid = BuiltInRegistries.FLUID.getValue(entryStack.getIdentifier());
-                            if (fluid != null && isFluidRestricted(restriction, fluid)) add(entryStack);
-                        }
-                        else if(BuiltInRegistries.ITEM.getOptional(entryStack.getIdentifier()).isPresent())
-                        {
-                            ItemStack stack = new ItemStack(BuiltInRegistries.ITEM.getOptional(entryStack.getIdentifier()).get());
-                            if (!getMods(restriction).isEmpty()) {
-                                if(check(restriction, stack, ResourceUtil.CHECK_TYPES.MOD)) {
-                                    add(entryStack);
-                                }
-                            }
-                            if(!getTags(restriction).isEmpty()) {
-                                if(check(restriction, stack, CHECK_TYPES.TAG)) {
-                                    add(entryStack);
-                                }
-                            }
-                            if (!getItems(restriction).isEmpty()) {
-                                if (check(restriction, stack, CHECK_TYPES.ITEM)) {
-                                    add(entryStack);
-                                }
-                            }
-                        }
-                    }
-                });
-            }
-            catch (NullPointerException e){
-                //
-            }
-        });
-    }
-
-    private void hideEntries(BasicFilteringRule<?> rule) {
-        if (!this.hiddenEntries.isEmpty()) {
-            if(CommonConfig.debugMode.get()) LOGGER.info("Hiding the following items: " + this.hiddenEntries);
-            for (EntryStack<?> stack : this.hiddenEntries) {
-                rule.hide(stack);
-            }
-        } else if(CommonConfig.debugMode.get()) LOGGER.warn("There are no items that are supposed to be hidden in REI");
-    }
-
-    private void add(EntryStack<?> entryStack) {
-        this.hiddenEntries.add(entryStack);
-    }
-
-    private void add(List<EntryStack<?>> entryStacks) {
-        this.hiddenEntries.addAll(entryStacks);
-    }
 }

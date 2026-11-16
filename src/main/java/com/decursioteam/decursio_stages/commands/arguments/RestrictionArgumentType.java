@@ -9,16 +9,9 @@ import com.mojang.brigadier.suggestion.Suggestions;
 import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.commands.SharedSuggestionProvider;
 
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
 public class RestrictionArgumentType implements ArgumentType<String> {
-
-    private Set<String> KNOWN_RESTRICTIONS = null;
-
-    public RestrictionArgumentType() {
-        KNOWN_RESTRICTIONS = RestrictionsData.getRegistry().getRestrictions().keySet();;
-    }
 
     @Override
     public String parse(StringReader reader) throws CommandSyntaxException {
@@ -26,11 +19,12 @@ public class RestrictionArgumentType implements ArgumentType<String> {
     }
 
     @Override
-    public String toString () {
+    public String toString() {
         return "restriction";
     }
 
+    @Override
     public <S> CompletableFuture<Suggestions> listSuggestions(CommandContext<S> ctx, SuggestionsBuilder builder) {
-        return SharedSuggestionProvider.suggest(KNOWN_RESTRICTIONS, builder);
+        return SharedSuggestionProvider.suggest(RestrictionsData.getRegistry().getRestrictions().keySet(), builder);
     }
 }

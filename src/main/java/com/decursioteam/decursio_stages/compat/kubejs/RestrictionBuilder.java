@@ -38,9 +38,16 @@ public final class RestrictionBuilder {
         return parsed.toString();
     }
     private static String modId(String mod) {
-        if (!mod.matches("[a-z0-9_]+")) throw new IllegalArgumentException("Invalid mod ID: " + mod);
+        if (!mod.matches("[a-z0-9_.-]+")) throw new IllegalArgumentException("Invalid mod ID: " + mod);
         return mod;
     }
+
+    public RestrictionBuilder recipe(String recipe) { array("recipeList").add(id(recipe)); return this; }
+    public RestrictionBuilder recipeMod(String mod) { return entry("recipeList", "mod", modId(mod)); }
+    public RestrictionBuilder recipeTag(String tag) { return entry("recipeList", "tag", id(tag)); }
+    public RestrictionBuilder exceptRecipe(String recipe) { array("recipeExceptionList").add(id(recipe)); return this; }
+    public RestrictionBuilder exceptRecipeMod(String mod) { return entry("recipeExceptionList", "mod", modId(mod)); }
+    public RestrictionBuilder exceptRecipeTag(String tag) { return entry("recipeExceptionList", "tag", id(tag)); }
 
     public RestrictionBuilder item(String id) { return entry("itemList", "item", id(id)); }
     public RestrictionBuilder tag(String id) { array("tagList").add(id(id)); return this; }

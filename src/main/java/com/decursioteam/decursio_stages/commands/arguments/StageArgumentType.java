@@ -10,14 +10,9 @@ import com.mojang.brigadier.suggestion.SuggestionsBuilder;
 import net.minecraft.commands.CommandSourceStack;
 import net.minecraft.commands.SharedSuggestionProvider;
 
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 
-public class StageArgumentType  implements ArgumentType<String> {
-    private Set<String> KNOWN_STAGES = null;
-    public StageArgumentType() {
-        KNOWN_STAGES = StageUtil.getStages();
-    }
+public class StageArgumentType implements ArgumentType<String> {
 
     public static String getStage(CommandContext<CommandSourceStack> ctx, String name) throws CommandSyntaxException {
         return ctx.getArgument(name, String.class);
@@ -29,13 +24,12 @@ public class StageArgumentType  implements ArgumentType<String> {
     }
 
     @Override
-    public String toString () {
+    public String toString() {
         return "stage";
     }
 
-
+    @Override
     public <S> CompletableFuture<Suggestions> listSuggestions(CommandContext<S> ctx, SuggestionsBuilder builder) {
-        return SharedSuggestionProvider.suggest(KNOWN_STAGES, builder);
+        return SharedSuggestionProvider.suggest(StageUtil.getStages(), builder);
     }
-
 }

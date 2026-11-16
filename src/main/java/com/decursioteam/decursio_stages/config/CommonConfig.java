@@ -6,6 +6,8 @@ import net.neoforged.neoforge.common.ModConfigSpec;
 public class CommonConfig {
     public static final ModConfigSpec.Builder builder = new ModConfigSpec.Builder();
     public static final ModConfigSpec config;
+    public enum ProcessorPolicy { PLACER, LAST_INSERT, OUTPUT_ONLY }
+    public static final ModConfigSpec.EnumValue<ProcessorPolicy> processorPolicy;
     public static ModConfigSpec.BooleanValue debugMode;
 
     static {
@@ -115,6 +117,8 @@ public class CommonConfig {
                         Set this value to 'true' whenever you're having issues, this will allow the mod to output everything it tries to do in the log.""")
                 .define("debugMode", false);
 
+        processorPolicy = builder.comment("Recipe policy for furnaces, smokers, blast furnaces, campfires and crafters. Unknown owners deny restricted recipes.")
+                .defineEnum("processorRecipePolicy", ProcessorPolicy.PLACER);
         builder.pop();
         config = builder.build();
     }

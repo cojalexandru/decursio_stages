@@ -24,9 +24,13 @@ public class OpenRestrictEditorMessage implements CustomPacketPayload {
     @Nullable private final String select;
     @Nullable private final Component status;
     private final boolean error;
+    private final String version;
     private final List<String> structureIds;
+    private final List<String> recipeIds;
 
-    public OpenRestrictEditorMessage(Map<String, JsonObject> restrictions, @Nullable String select, @Nullable Component status, boolean error, List<String> structureIds) {
+    public OpenRestrictEditorMessage(Map<String, JsonObject> restrictions, @Nullable String select, @Nullable Component status, boolean error, String version, List<String> structureIds, List<String> recipeIds) {
+        this.recipeIds = List.copyOf(recipeIds);
+        this.version = version;
         this.structureIds = List.copyOf(structureIds);
         this.restrictions = restrictions;
         this.select = select;
@@ -41,10 +45,13 @@ public class OpenRestrictEditorMessage implements CustomPacketPayload {
         String select = buf.readBoolean() ? buf.readUtf() : null;
         Component status = buf.readBoolean() ? net.minecraft.network.chat.ComponentSerialization.STREAM_CODEC.decode(buf) : null;
         boolean error = buf.readBoolean();
+        String version = buf.readUtf(64);
         JsonArray ids = JsonParser.parseString(JsonPayload.read(buf)).getAsJsonArray();
         List<String> structures = new java.util.ArrayList<>();
         ids.forEach(id -> structures.add(id.getAsString()));
-        return new OpenRestrictEditorMessage(map, select, status, error, structures);
+        List<String> recipes = new java.util.ArrayList<>();
+        JsonParser.parseString(JsonPayload.read(buf)).getAsJsonArray().forEach(id -> recipes.add(id.getAsString()));
+        return new OpenRestrictEditorMessage(map, select, status, error, version, structures, recipes);
     }
 
     public void encode(net.minecraft.network.RegistryFriendlyByteBuf buf) {
@@ -56,14 +63,19 @@ public class OpenRestrictEditorMessage implements CustomPacketPayload {
         buf.writeBoolean(status != null);
         if (status != null) net.minecraft.network.chat.ComponentSerialization.STREAM_CODEC.encode(buf, status);
         buf.writeBoolean(error);
+        buf.writeUtf(version, 64);
         JsonArray ids = new JsonArray();
         structureIds.forEach(ids::add);
         JsonPayload.write(buf, ids.toString());
+        JsonArray recipes = new JsonArray(); recipeIds.forEach(recipes::add);
+        JsonPayload.write(buf, recipes.toString());
     }
 
     public Map<String, JsonObject> getRestrictions() { return restrictions; }
     @Nullable public String getSelect() { return select; }
     @Nullable public Component getStatus() { return status; }
+    public List<String> getRecipeIds() { return recipeIds; }
     public List<String> getStructureIds() { return structureIds; }
+    public String getVersion() { return version; }
     public boolean isError() { return error; }
 }

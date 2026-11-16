@@ -10,19 +10,27 @@ import net.neoforged.neoforge.network.event.RegisterPayloadHandlersEvent;
 
 public final class NetworkUtil {
     private final String version;
-    public NetworkUtil(String channelName, String version) { this.version = version; }
+    public NetworkUtil(String version) { this.version = version; }
 
     public void register(RegisterPayloadHandlersEvent event) {
         var registrar = event.registrar(version);
+        registrar.playToClient(SyncRecipeVisibilityMessage.TYPE,
+                StreamCodec.of((buf, msg) -> msg.encode(buf), SyncRecipeVisibilityMessage::decode),
+                (msg, context) -> com.decursioteam.decursio_stages.client.ClientRecipeVisibility.apply(msg.blocked(), msg.displays()));
         registrar.playToClient(SyncStagesMessage.TYPE,
-                StreamCodec.of((buf, msg) -> ServerPacketHandler.encodeStageMessage(msg, buf), ClientPacketHandler::decodeStageMessage),
-                ClientPacketHandler::processSyncStagesMessage);
+                StreamCodec.of((buf, msg) -> msg.encode(buf), SyncStagesMessage::decode),
+                SyncStagesMessage::handle);
         registrar.playToClient(OpenRestrictEditorMessage.TYPE,
                 StreamCodec.of((buf, msg) -> msg.encode(buf), OpenRestrictEditorMessage::decode),
-                MessageHandlers::handleOpenRestrictEditor);
+                (msg, context) -> com.decursioteam.decursio_stages.client.screens.RestrictEditorClient.handle(msg));
         registrar.playToServer(EditRestrictionMessage.TYPE,
                 StreamCodec.of((buf, msg) -> msg.encode(buf), EditRestrictionMessage::decode),
                 RestrictionEditorServer::handle);
+        registrar.playToServer(RequestRestrictionsMessage.TYPE,
+                StreamCodec.of((buf, msg) -> {}, buf -> new RequestRestrictionsMessage()),
+                (msg, context) -> {
+                    if (context.player() instanceof ServerPlayer player) RestrictionSync.recover(player);
+                });
         registrar.playToClient(SyncRestrictionsMessage.TYPE,
                 StreamCodec.of((buf, msg) -> msg.encode(buf), SyncRestrictionsMessage::decode),
                 (msg, context) -> com.decursioteam.decursio_stages.client.ClientRestrictionSync.apply(msg));

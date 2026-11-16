@@ -10,11 +10,9 @@ import com.mojang.serialization.codecs.RecordCodecBuilder;
 import org.jspecify.annotations.Nullable;
 import java.util.function.Consumer;
 
-@SuppressWarnings("unused")
 public class Restrictions {
 
     public static final Restrictions DEFAULT = new Restrictions(RestrictionCodec.DEFAULT, SettingsCodec.DEFAULT);
-
 
     public static Codec<Restrictions> codec(String name) {
         return RecordCodecBuilder.create(instance -> instance.group(
@@ -23,20 +21,14 @@ public class Restrictions {
         ).apply(instance, Restrictions::new));
     }
 
-    protected RestrictionCodec restrictionCodec;
-    protected SettingsCodec settingsCodec;
+    protected final RestrictionCodec restrictionCodec;
+    protected final SettingsCodec settingsCodec;
     protected JsonObject rawData;
 
     private Restrictions(RestrictionCodec restrictionCodec, SettingsCodec settingsCodec) {
         this.restrictionCodec = restrictionCodec;
         this.settingsCodec = settingsCodec;
-        this.rawData = RestrictionsData.getRegistry().getRawORestrictionsData(restrictionCodec.getName());
-    }
-
-    private Restrictions(Mutable mutable) {
-        this.restrictionCodec = mutable.restrictionCodec.toImmutable();
-        this.settingsCodec = mutable.settingsCodec.toImmutable();
-        this.rawData = mutable.rawData;
+        this.rawData = RestrictionsData.getRegistry().getRawRestrictionData(restrictionCodec.getName());
     }
 
     public RestrictionCodec getData() {
@@ -50,41 +42,5 @@ public class Restrictions {
     @Nullable
     public JsonObject getRawData() {
         return rawData;
-    }
-
-    public Restrictions toImmutable() {
-        return this;
-    }
-
-    //TODO: javadoc this sub class
-    public static class Mutable extends Restrictions {
-        public Mutable(RestrictionCodec restrictionCodec, SettingsCodec settingsCodec) {
-            super(restrictionCodec, settingsCodec);
-        }
-
-        public Mutable() {
-            super(RestrictionCodec.DEFAULT, SettingsCodec.DEFAULT);
-        }
-
-        public Mutable setData(RestrictionCodec restrictionCodec) {
-            this.restrictionCodec = restrictionCodec;
-            return this;
-        }
-
-        public Mutable setData(SettingsCodec settingsCodec) {
-            this.settingsCodec = settingsCodec;
-            return this;
-        }
-
-
-        public Mutable setRawData(JsonObject rawData) {
-            this.rawData = rawData;
-            return this;
-        }
-
-        @Override
-        public Restrictions toImmutable() {
-            return new Restrictions(this);
-        }
     }
 }

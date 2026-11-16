@@ -3,18 +3,15 @@ package com.decursioteam.decursio_stages.client.screens;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonElement;
 import com.google.gson.JsonObject;
-import com.google.gson.JsonPrimitive;
-import net.minecraft.resources.Identifier;
 import net.minecraft.world.entity.EntitySpawnReason;
 import net.minecraft.world.entity.MobCategory;
 
 import java.util.Arrays;
 import java.util.List;
-import java.util.Locale;
 
 /** Field definitions shared by the form widgets and their validation. */
 final class RestrictionForm {
-    enum Kind { TEXT, ID, NUMBER, BOOLEAN, CHOICE, IDS, STRINGS, CHOICES, OBJECTS, COMPONENTS }
+    enum Kind { TEXT, ID, MOD, NUMBER, BOOLEAN, CHOICE, IDS, STRINGS, CHOICES, OBJECTS, COMPONENTS }
 
     record Field(String key, String label, Kind kind, boolean required, int min, int max,
                  List<String> choices, List<Field> children, String hint) {
@@ -45,6 +42,10 @@ final class RestrictionForm {
                 + (required ? " Required." : " Leave blank to disable this filter."));
     }
 
+    private static final List<Field> RECIPE_SELECTOR = List.of(
+            field("recipe", "Recipe ID", Kind.ID, false, "Exact recipe ID, e.g. minecraft:diamond_sword. Leave blank to disable this filter."),
+            field("mod", "Mod ID", Kind.MOD, false, "Mod namespace, e.g. mekanism. Leave blank to disable this filter."),
+            field("tag", "Output item tag", Kind.ID, false, "Output item tag ID, e.g. minecraft:planks. Leave blank to disable this filter."));
     private static final List<Field> EFFECT = List.of(
             id("effect", "Effect ID", true), number("amplifier", "Amplifier (0 = level I)", false, 0, 255),
             number("duration", "Duration (ticks; 0 = infinite)", false, -1, Integer.MAX_VALUE),
@@ -77,10 +78,12 @@ final class RestrictionForm {
             number("minLight", "Minimum light", false, 0, 15),
             number("maxLight", "Maximum light", false, 0, 15),
             field("biomes", "Biomes", Kind.IDS, false, "Optional biome IDs for this rule."),
-            number("health", "Health (half-hearts)", false, 1, Integer.MAX_VALUE),
-            objects("effects", "Effects", EFFECT), objects("loadout", "Equipment", LOADOUT));
+            number("health", "Whitelist health (half-hearts)", false, 1, Integer.MAX_VALUE),
+            objects("effects", "Whitelist effects", EFFECT), objects("loadout", "Whitelist equipment", LOADOUT));
 
     static final List<Field> SECTIONS = List.of(
+            objects("recipeList", "Recipes", RECIPE_SELECTOR),
+            objects("recipeExceptionList", "Recipe exceptions", RECIPE_SELECTOR),
             objects("structureList", "Structures", STRUCTURE), objects("dimensionList", "Dimensions", DIMENSION),
             objects("mobList", "Mobs", MOB),
             field("containerList", "Containers", Kind.STRINGS, false, "Java menu class names, e.g. net.minecraft.world.inventory.ChestMenu."),
@@ -122,66 +125,7 @@ final class RestrictionForm {
     }
 
     static void validate(Field field, JsonElement value, String path) {
-        if (value == null) {
-            if (field.required()) fail(path, "is required");
-            return;
-        }
-        if (field.list()) {
-            if (!value.isJsonArray()) fail(path, "must be a list");
-            JsonArray array = value.getAsJsonArray();
-            if (field.required() && array.isEmpty()) fail(path, "select at least one entry");
-            for (int i = 0; i < array.size(); i++) {
-                String entryPath = path + " / " + (i + 1);
-                JsonElement entry = array.get(i);
-                if (field.kind() == Kind.OBJECTS) {
-                    if (!entry.isJsonObject()) fail(entryPath, "must be an entry");
-                    JsonObject object = entry.getAsJsonObject();
-                    for (Field child : field.children()) validate(child, object.get(child.key()), entryPath + " / " + child.label());
-                    if (field.key().equals("mobList")) {
-                        if (!object.has("entityID") && !object.has("entityModID") && !object.has("entityTag") && !object.has("mobCategory"))
-                            fail(entryPath, "choose at least one mob filter");
-                        if (object.has("minLight") && object.has("maxLight") && object.get("minLight").getAsInt() > object.get("maxLight").getAsInt())
-                            fail(entryPath, "minimum light exceeds maximum light");
-                    }
-                } else {
-                    Kind kind = field.kind() == Kind.IDS ? Kind.ID : field.kind() == Kind.CHOICES ? Kind.CHOICE : Kind.TEXT;
-                    validate(new Field(field.key(), field.label(), kind, true, 0, 0, field.choices(), List.of(), ""), entry, entryPath);
-                }
-            }
-            return;
-        }
-        if (field.kind() == Kind.COMPONENTS) {
-            if (!value.isJsonObject()) fail(path, "must contain item components");
-            return;
-        }
-        if (!value.isJsonPrimitive()) fail(path, "has an invalid value");
-        JsonPrimitive primitive = value.getAsJsonPrimitive();
-        String text = primitive.getAsString();
-        switch (field.kind()) {
-            case ID -> { if (text.isBlank() || Identifier.tryParse(text) == null) fail(path, "enter a valid resource ID"); }
-            case TEXT -> {
-                if (!primitive.isString() || (text.isBlank() && !field.key().equals("message"))) fail(path, "cannot be empty");
-                if (field.key().equals("entityModID") && !text.matches("[a-z0-9_.-]+")) fail(path, "enter a mod namespace");
-            }
-            case BOOLEAN -> { if (!primitive.isBoolean()) fail(path, "choose Yes or No"); }
-            case CHOICE -> {
-                String choice = field.key().equals("slot") ? text.toUpperCase(Locale.ROOT) : text;
-                if (!field.choices().contains(choice)) fail(path, "choose a supported value");
-            }
-            case NUMBER -> {
-                try {
-                    int number = Integer.parseInt(text);
-                    if (!primitive.isNumber() || number < field.min() || number > field.max()) throw new NumberFormatException();
-                } catch (NumberFormatException error) {
-                    fail(path, "enter a whole number from " + field.min() + " to " + field.max());
-                }
-            }
-            default -> { }
-        }
-    }
-
-    private static void fail(String path, String message) {
-        throw new IllegalArgumentException(path + ": " + message);
+        com.decursioteam.decursio_stages.datagen.RestrictionSchema.validateField(field.key(), value, field.required(), path);
     }
 
     private RestrictionForm() {}

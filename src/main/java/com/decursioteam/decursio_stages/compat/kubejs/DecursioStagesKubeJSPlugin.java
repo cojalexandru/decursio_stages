@@ -38,9 +38,12 @@ public final class DecursioStagesKubeJSPlugin implements KubeJSPlugin {
         var event = new RestrictionsEventJS();
         boolean[] failed = {false};
         RESTRICTIONS.exceptionHandler((e, handler, error) -> { failed[0] = true; return error; });
-        var result = RESTRICTIONS.post(event);
-        RESTRICTIONS.exceptionHandler(null);
-        if (result.type() == dev.latvian.mods.kubejs.event.EventResult.Type.ERROR) failed[0] = true;
+        try {
+            var result = RESTRICTIONS.post(event);
+            if (result.type() == dev.latvian.mods.kubejs.event.EventResult.Type.ERROR) failed[0] = true;
+        } finally {
+            RESTRICTIONS.exceptionHandler(null);
+        }
         if (failed[0]) {
             DecursioStages.LOGGER.error("Keeping previous script restrictions because a KubeJS handler failed");
             return;
