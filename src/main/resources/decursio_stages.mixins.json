@@ -11,7 +11,6 @@
     "OreMiningMixin",
     "OreBlockCacheMixin",
     "OreLightCacheMixin",
-    "OreJadeMixin",
     "OreProbeMixin",
     "RecipeCraftingMixin",
     "RecipeClickMixin",

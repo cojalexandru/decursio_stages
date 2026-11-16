@@ -1,38 +1,59 @@
 package com.decursioteam.decursio_stages.mixin;
 
 import com.decursioteam.decursio_stages.orestaging.OreStages;
-import com.llamalad7.mixinextras.injector.wrapoperation.Operation;
-import com.llamalad7.mixinextras.injector.wrapoperation.WrapOperation;
-import com.llamalad7.mixinextras.sugar.Local;
 import net.minecraft.core.BlockPos;
+import net.minecraft.resources.ResourceKey;
+import net.minecraft.server.level.ServerLevel;
 import net.minecraft.server.level.ServerPlayer;
-import net.minecraft.world.entity.player.Player;
 import net.minecraft.world.item.ItemStack;
 import net.minecraft.world.level.Level;
 import net.minecraft.world.level.block.state.BlockState;
+import net.minecraftforge.network.NetworkEvent;
 import org.spongepowered.asm.mixin.Mixin;
 import org.spongepowered.asm.mixin.Pseudo;
+import org.spongepowered.asm.mixin.Shadow;
+import org.spongepowered.asm.mixin.Unique;
 import org.spongepowered.asm.mixin.injection.At;
+import org.spongepowered.asm.mixin.injection.Inject;
 import org.spongepowered.asm.mixin.injection.ModifyVariable;
+import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
+
+import java.util.function.Supplier;
 
 /** Apply the requesting player's disguise before TOP's normal, extended and debug providers run. */
 @Pseudo
 @Mixin(targets = "mcjty.theoneprobe.network.PacketGetInfo", remap = false)
 public abstract class OreProbeMixin {
-    @WrapOperation(method = "getProbeInfo", at = @At(value = "INVOKE", target = "Lnet/minecraft/world/level/Level;getBlockState(Lnet/minecraft/core/BlockPos;)Lnet/minecraft/world/level/block/state/BlockState;"))
-    private static BlockState decstages$visibleState(Level level, BlockPos pos, Operation<BlockState> original,
-                                                    @Local(argsOnly = true) Player player) {
-        BlockState real = original.call(level, pos);
-        return player instanceof ServerPlayer serverPlayer ? OreStages.miningState(serverPlayer, real) : real;
+    @Unique
+    private static final ThreadLocal<ServerPlayer> DECSTAGES$PLAYER = new ThreadLocal<>();
+
+    @Shadow private ResourceKey<Level> dim;
+    @Shadow private BlockPos pos;
+    @Shadow private ItemStack pickBlock;
+
+    @Inject(method = "lambda$handle$0", at = @At("HEAD"))
+    private void decstages$before(Supplier<?> ctx, CallbackInfo ci) {
+        if (ctx.get() instanceof NetworkEvent.Context netCtx && netCtx.getSender() != null) {
+            ServerPlayer player = netCtx.getSender();
+            DECSTAGES$PLAYER.set(player);
+            ServerLevel world = player.server.getLevel(dim);
+            if (world != null && world.hasChunkAt(pos)) {
+                BlockState real = world.getBlockState(pos);
+                BlockState visible = OreStages.miningState(player, real);
+                // The request can contain an old pick result immediately after a stage transition.
+                if (visible != real) this.pickBlock = new ItemStack(visible.getBlock());
+            }
+        }
     }
 
-    @ModifyVariable(method = "getProbeInfo", at = @At("HEAD"), argsOnly = true)
-    private static ItemStack decstages$visiblePick(ItemStack picked, @Local(argsOnly = true) Player player,
-                                                 @Local(argsOnly = true) Level level, @Local(argsOnly = true) BlockPos pos) {
-        if (!(player instanceof ServerPlayer serverPlayer) || !level.hasChunkAt(pos)) return picked;
-        BlockState real = level.getBlockState(pos);
-        BlockState visible = OreStages.miningState(serverPlayer, real);
-        // The request can contain an old pick result immediately after a stage transition.
-        return visible == real ? picked : new ItemStack(visible.getBlock());
+    @Inject(method = "lambda$handle$0", at = @At("RETURN"))
+    private void decstages$after(Supplier<?> ctx, CallbackInfo ci) {
+        DECSTAGES$PLAYER.remove();
+    }
+
+    @ModifyVariable(method = "getProbeInfo", at = @At("STORE"), ordinal = 0)
+    private static BlockState decstages$visibleState(BlockState state) {
+        ServerPlayer player = DECSTAGES$PLAYER.get();
+        return player != null ? OreStages.miningState(player, state) : state;
     }
 }
